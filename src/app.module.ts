@@ -11,6 +11,11 @@ import { buildTypeOrmOptions } from './infra/database/typeorm-options';
 import { KafkaModule } from './infra/kafka/kafka.module';
 import { AuthController, REGISTER_THROTTLER } from './controllers/auth.controller';
 import { HealthController } from './controllers/health.controller';
+import {
+  LOGIN_EMAIL_THROTTLER,
+  LOGIN_IP_THROTTLER,
+  loginThrottleTracker,
+} from './controllers/login-throttle.tracker';
 import { HealthService } from './services/health.service';
 import { OutboundDeadLetterRepository } from './repositories/outbound-dead-letter.repository';
 import { RefreshTokenRepository } from './repositories/refresh-token.repository';
@@ -57,8 +62,22 @@ function createTokenIssuer(signingKey: SigningKey, configService: ConfigService)
     ThrottlerModule.forRootAsync({
       inject: [ConfigService],
       useFactory: (configService: ConfigService) => {
-        const { register } = configService.getOrThrow<RateLimitConfig>('rateLimit');
-        return [{ name: REGISTER_THROTTLER, limit: register.limit, ttl: register.ttlMs }];
+        const { register, login } = configService.getOrThrow<RateLimitConfig>('rateLimit');
+        return [
+          { name: REGISTER_THROTTLER, limit: register.limit, ttl: register.ttlMs },
+          {
+            name: LOGIN_IP_THROTTLER,
+            limit: login.limit,
+            ttl: login.ttlMs,
+            getTracker: loginThrottleTracker('ip'),
+          },
+          {
+            name: LOGIN_EMAIL_THROTTLER,
+            limit: login.limit,
+            ttl: login.ttlMs,
+            getTracker: loginThrottleTracker('email'),
+          },
+        ];
       },
     }),
     KafkaModule,

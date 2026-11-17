@@ -20,7 +20,7 @@ import {
   ApiTooManyRequestsResponse,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
-import { ThrottlerGuard } from '@nestjs/throttler';
+import { SkipThrottle, ThrottlerGuard } from '@nestjs/throttler';
 import { LoginCommand } from '../commands/login.command';
 import { RegisterCustomerCommand } from '../commands/register-customer.command';
 import { DuplicateEmailError } from '../domain/errors/duplicate-email.error';
@@ -32,6 +32,7 @@ import { LoginResponseDto } from '../dto/login-response.dto';
 import { RegisterDto } from '../dto/register.dto';
 import { RegisterResponseDto } from '../dto/register-response.dto';
 import { LoginResult } from '../services/login.service';
+import { LOGIN_EMAIL_THROTTLER, LOGIN_IP_THROTTLER } from './login-throttle.tracker';
 
 /** Name of the throttler that limits `POST /auth/register` per client IP. */
 export const REGISTER_THROTTLER = 'register';
@@ -51,6 +52,7 @@ export class AuthController {
   @Post('register')
   @HttpCode(HttpStatus.CREATED)
   @UseGuards(ThrottlerGuard)
+  @SkipThrottle({ [LOGIN_IP_THROTTLER]: true, [LOGIN_EMAIL_THROTTLER]: true })
   @ApiCreatedResponse({ type: RegisterResponseDto, description: 'Customer account created' })
   @ApiBadRequestResponse({
     description: 'Malformed body, unknown property, or invalid email, name or password',
@@ -70,18 +72,24 @@ export class AuthController {
 
   /**
    * Logs in with email and password (public). Returns an access token and a refresh token.
+   * Rate limited per client IP and per normalized email; every request counts, including 400s.
    *
    * @param body The validated login body.
    * @param clientIp The client IP (`req.ip`), passed on for logging only.
    */
   @Post('login')
   @HttpCode(HttpStatus.OK)
+  @UseGuards(ThrottlerGuard)
+  @SkipThrottle({ [REGISTER_THROTTLER]: true })
   @ApiOkResponse({ type: LoginResponseDto, description: 'Logged in; tokens issued' })
   @ApiBadRequestResponse({
     description: 'Malformed body, unknown property, missing or non-string field, or invalid email',
   })
   @ApiUnauthorizedResponse({
     description: 'invalid credentials (unknown email, wrong password or inactive user, alike)',
+  })
+  @ApiTooManyRequestsResponse({
+    description: 'Too many login attempts from this client IP or for this email',
   })
   async login(@Body() body: LoginDto, @Ip() clientIp: string): Promise<LoginResponseDto> {
     try {

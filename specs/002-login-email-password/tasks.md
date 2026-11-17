@@ -48,7 +48,7 @@ description: "Task list for US-02: Log in with email and password"
 ### Hasher
 
 - [X] T007 Add `verify(plain, hash): Promise<boolean>` and `dummyHash(): string` to `src/services/ports/password-hasher.ts`. Implement them in `src/infra/security/argon2-password-hasher.ts`: `verify` via `argon2.verify` (false on a malformed hash, never throws for a mismatch); `onModuleInit` hashes 32 random bytes once with the configured parameters; `dummyHash()` throws if called before init. Update the `PasswordHasher` mock in `tests/unit/services/register-customer.service.spec.ts`. Tests in `tests/unit/infra/argon2-password-hasher.spec.ts`: right password true, wrong false, `"secret "` ≠ `"secret"`, dummy hash is an argon2id string that verifies false for any input. Commit `feat(US-02): add password verification and dummy hash`.
-- [ ] T008 [P] Add the `Clock` port (`now(): Date`, abstract class) in `src/services/ports/clock.ts` and `SystemClock` in `src/infra/time/system-clock.ts`. Test in `tests/unit/infra/system-clock.spec.ts`. Commit `feat(US-02): add Clock port`.
+- [X] T008 [P] Add the `Clock` port (`now(): Date`, abstract class) in `src/services/ports/clock.ts` and `SystemClock` in `src/infra/time/system-clock.ts`. Test in `tests/unit/infra/system-clock.spec.ts`. Commit `feat(US-02): add Clock port`.
 
 ### Migration and repositories
 

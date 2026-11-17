@@ -10,6 +10,9 @@ import { KafkaModule } from './infra/kafka/kafka.module';
 import { HealthController } from './controllers/health.controller';
 import { HealthService } from './services/health.service';
 import { UserRepository } from './repositories/user.repository';
+import { Argon2PasswordHasher } from './infra/security/argon2-password-hasher';
+import { PasswordHasher } from './services/ports/password-hasher';
+import { RegisterCustomerService } from './services/register-customer.service';
 
 /** Root module of the identity service. */
 @Module({
@@ -25,6 +28,11 @@ import { UserRepository } from './repositories/user.repository';
     CqrsModule,
   ],
   controllers: [HealthController],
-  providers: [HealthService, UserRepository],
+  providers: [
+    HealthService,
+    UserRepository,
+    { provide: PasswordHasher, useClass: Argon2PasswordHasher },
+    RegisterCustomerService,
+  ],
 })
 export class AppModule {}

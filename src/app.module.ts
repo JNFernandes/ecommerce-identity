@@ -17,6 +17,7 @@ import { buildTypeOrmOptions } from './infra/database/typeorm-options';
 import { KafkaModule } from './infra/kafka/kafka.module';
 import { AuthController, REGISTER_THROTTLER } from './controllers/auth.controller';
 import { HealthController } from './controllers/health.controller';
+import { JwksController } from './controllers/jwks.controller';
 import {
   LOGIN_EMAIL_THROTTLER,
   LOGIN_IP_THROTTLER,
@@ -103,7 +104,7 @@ function createJwksService(publicKeySet: PublicKeySet, configService: ConfigServ
     KafkaModule,
     CqrsModule,
   ],
-  controllers: [HealthController, AuthController],
+  controllers: [HealthController, AuthController, JwksController],
   providers: [
     HealthService,
     UserRepository,

@@ -93,7 +93,7 @@ unreachable and check 201 plus a stored dead-letter record.
    `aggregateId` = user id, `occurredAt`, `version`, `customerId`, `email` and `name`, keyed by the
    user id.
 2. **Given** Kafka is unreachable, **When** a visitor registers, **Then** the response is still 201,
-   the failure is logged with topic, key, `eventId` and cause, and the event is stored in the
+   the failure is logged with topic, key, `eventId`, `aggregateId` and cause, and the event is stored in the
    outbound dead-letter table as pending with `retryCount` 0, a `nextRetryAt` and the last error.
 3. **Given** the account cannot be saved, **When** a visitor registers, **Then** no event is
    published and no dead-letter record is written.
@@ -140,7 +140,7 @@ unreachable and check 201 plus a stored dead-letter record.
   8601), `version` (1), `customerId`, `email` and `name` — exactly these fields, no others — keyed
   by `aggregateId`, and MUST match `ecommerce-infra/docs/events.md`.
 - **FR-012**: If publishing fails, the registration MUST still return 201, the error MUST be logged
-  with full context (topic, key, `eventId`, cause; never password or hash), and the event MUST be
+  with full context (topic, key, `eventId`, `aggregateId`, cause; never password or hash), and the event MUST be
   stored in an outbound dead-letter table with `status`, `retryCount`, `nextRetryAt` and the last
   error, keeping its `eventId`.
 - **FR-013**: A schema migration MUST create the users table, with a unique index on the lowercased

@@ -3,6 +3,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import configuration, { DatabaseConfig } from './config/configuration';
 import { buildTypeOrmOptions } from './infra/database/typeorm-options';
+import { KafkaModule } from './infra/kafka/kafka.module';
 
 /** Root module of the identity service. */
 @Module({
@@ -13,6 +14,7 @@ import { buildTypeOrmOptions } from './infra/database/typeorm-options';
       useFactory: (configService: ConfigService) =>
         buildTypeOrmOptions(configService.getOrThrow<DatabaseConfig>('database')),
     }),
+    KafkaModule,
   ],
 })
 export class AppModule {}

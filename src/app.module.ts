@@ -3,7 +3,13 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { CqrsModule } from '@nestjs/cqrs';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ThrottlerModule } from '@nestjs/throttler';
-import configuration, { DatabaseConfig, JwtConfig, RateLimitConfig } from './config/configuration';
+import configuration, {
+  DatabaseConfig,
+  JwksConfig,
+  JwtConfig,
+  parseNonNegativeInteger,
+  RateLimitConfig,
+} from './config/configuration';
 import { OutboundDeadLetterEntity } from './infra/database/entities/outbound-dead-letter.entity';
 import { RefreshTokenEntity } from './infra/database/entities/refresh-token.entity';
 import { UserEntity } from './infra/database/entities/user.entity';
@@ -32,7 +38,9 @@ import { RefreshTokenGenerator } from './services/ports/refresh-token-generator'
 import { TokenIssuer } from './services/ports/token-issuer';
 import { UserEventPublisher } from './services/ports/user-event-publisher';
 import { UserEventsProducer } from './infra/kafka/user-events.producer';
+import { DEFAULT_JWKS_CACHE_SECONDS, JwksService } from './services/jwks.service';
 import { LoginService } from './services/login.service';
+import { PublicKeySet } from './services/ports/public-key-set';
 import { RegisterCustomerService } from './services/register-customer.service';
 
 /**
@@ -48,6 +56,17 @@ function createTokenIssuer(signingKey: SigningKey, configService: ConfigService)
     throw new Error('JWT_AUDIENCE is not set');
   }
   return new JoseTokenIssuer(signingKey, { issuer, audience, accessTtlSeconds });
+}
+
+/**
+ * Builds the JWKS service, failing fast when `JWKS_CACHE_SECONDS` is not a non-negative integer.
+ */
+function createJwksService(publicKeySet: PublicKeySet, configService: ConfigService): JwksService {
+  const { cacheSeconds } = configService.getOrThrow<JwksConfig>('jwks');
+  return new JwksService(
+    publicKeySet,
+    parseNonNegativeInteger(cacheSeconds, DEFAULT_JWKS_CACHE_SECONDS, 'JWKS_CACHE_SECONDS'),
+  );
 }
 
 /** Root module of the identity service. */
@@ -105,7 +124,9 @@ function createTokenIssuer(signingKey: SigningKey, configService: ConfigService)
       inject: [KeyRing],
       useFactory: (ring: KeyRing): SigningKey => ring.activeKey,
     },
+    { provide: PublicKeySet, useExisting: KeyRing },
     { provide: TokenIssuer, inject: [SigningKey, ConfigService], useFactory: createTokenIssuer },
+    { provide: JwksService, inject: [PublicKeySet, ConfigService], useFactory: createJwksService },
     { provide: RefreshTokenGenerator, useClass: CryptoRefreshTokenGenerator },
     { provide: Clock, useClass: SystemClock },
     { provide: UserEventPublisher, useClass: UserEventsProducer },

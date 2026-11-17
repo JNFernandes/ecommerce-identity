@@ -25,7 +25,7 @@ description: "Task list for US-01: Register a customer account"
 
 ## Phase 1: Setup
 
-- [ ] T001 Add `@nestjs/cqrs@^10.2.7` (dependency) and `@testcontainers/kafka@^10.28.0` (dev dependency) in `package.json` / `package-lock.json`; import `CqrsModule` in `src/app.module.ts`. Commit `build(US-01): add @nestjs/cqrs and @testcontainers/kafka`.
+- [X] T001 Add `@nestjs/cqrs@^10.2.7` (dependency) and `@testcontainers/kafka@^10.28.0` (dev dependency) in `package.json` / `package-lock.json`; import `CqrsModule` in `src/app.module.ts`. Commit `build(US-01): add @nestjs/cqrs and @testcontainers/kafka`.
 
 ---
 

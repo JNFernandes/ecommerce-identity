@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { CqrsModule } from '@nestjs/cqrs';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import configuration, { DatabaseConfig } from './config/configuration';
 import { buildTypeOrmOptions } from './infra/database/typeorm-options';
@@ -17,6 +18,7 @@ import { HealthService } from './services/health.service';
         buildTypeOrmOptions(configService.getOrThrow<DatabaseConfig>('database')),
     }),
     KafkaModule,
+    CqrsModule,
   ],
   controllers: [HealthController],
   providers: [HealthService],

@@ -1,4 +1,5 @@
 import { DuplicateEmailError } from '../../../src/domain/errors/duplicate-email.error';
+import { InvalidCredentialsError } from '../../../src/domain/errors/invalid-credentials.error';
 import { UserValidationError } from '../../../src/domain/errors/user-validation.error';
 import { Role } from '../../../src/domain/role.enum';
 import { UserStatus } from '../../../src/domain/user-status.enum';
@@ -20,6 +21,15 @@ describe('domain errors', () => {
     expect(error).toBeInstanceOf(Error);
     expect(error.name).toBe('DuplicateEmailError');
     expect(error.message).toBe('email already registered');
+  });
+
+  it('should use the fixed message in an InvalidCredentialsError', () => {
+    const error = new InvalidCredentialsError();
+
+    expect(error).toBeInstanceOf(InvalidCredentialsError);
+    expect(error).toBeInstanceOf(Error);
+    expect(error.name).toBe('InvalidCredentialsError');
+    expect(error.message).toBe('invalid credentials');
   });
 });
 

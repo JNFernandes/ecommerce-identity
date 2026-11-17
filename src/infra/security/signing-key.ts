@@ -1,6 +1,5 @@
-import { createPrivateKey, createPublicKey, KeyObject } from 'node:crypto';
+import { KeyObject } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
-import { calculateJwkThumbprint, exportJWK } from 'jose';
 
 /** Smallest accepted RSA modulus, in bits. */
 export const MIN_RSA_MODULUS_BITS = 2048;
@@ -23,16 +22,6 @@ export abstract class SigningKey {
   abstract readonly privateKey: KeyObject;
   /** RFC 7638 SHA-256 thumbprint of the public JWK; stable for a given key. */
   abstract readonly kid: string;
-}
-
-/** Concrete, immutable `SigningKey`. */
-class LoadedSigningKey extends SigningKey {
-  constructor(
-    readonly privateKey: KeyObject,
-    readonly kid: string,
-  ) {
-    super();
-  }
 }
 
 /** Reads the file, mapping file-system errors to messages that name the path only. */
@@ -61,23 +50,7 @@ export async function loadSigningKey(path: string | undefined): Promise<SigningK
     throw new SigningKeyError('JWT_PRIVATE_KEY_PATH is not set');
   }
   const pem = await readKeyFile(path);
-  let privateKey: KeyObject;
-  try {
-    privateKey = createPrivateKey(pem);
-  } catch {
-    throw new SigningKeyError(`signing key file does not hold a private key in PEM: ${path}`);
-  }
-  if (privateKey.asymmetricKeyType !== 'rsa') {
-    throw new SigningKeyError(
-      `signing key must be an RSA private key, got ${privateKey.asymmetricKeyType ?? 'unknown'}: ${path}`,
-    );
-  }
-  const bits = privateKey.asymmetricKeyDetails?.modulusLength ?? 0;
-  if (bits < MIN_RSA_MODULUS_BITS) {
-    throw new SigningKeyError(
-      `signing key must be at least ${MIN_RSA_MODULUS_BITS} bits, got ${bits}: ${path}`,
-    );
-  }
-  const kid = await calculateJwkThumbprint(await exportJWK(createPublicKey(privateKey)), 'sha256');
-  return new LoadedSigningKey(privateKey, kid);
+  // Loaded lazily: key-ring imports this module, so a static import would be a load-time cycle.
+  const { buildKeyRing } = await import('./key-ring');
+  return (await buildKeyRing({ path, pem }, [])).activeKey;
 }

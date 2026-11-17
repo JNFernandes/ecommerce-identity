@@ -29,7 +29,7 @@ description: "Task list for US-02: Log in with email and password"
 
 ## Phase 1: Setup
 
-- [ ] T001 Add `jwt.refreshTtlSeconds` (`JWT_REFRESH_TTL_SECONDS`, default 604800) and `rateLimit.login` (`RATE_LIMIT_LOGIN_LIMIT` 10, `RATE_LIMIT_LOGIN_TTL_MS` 60000) with JSDoc in `src/config/configuration.ts`. Extend `tests/unit/config/configuration.spec.ts` (defaults and overrides). Commit `feat(US-02): add refresh token and login rate limit settings`.
+- [X] T001 Add `jwt.refreshTtlSeconds` (`JWT_REFRESH_TTL_SECONDS`, default 604800) and `rateLimit.login` (`RATE_LIMIT_LOGIN_LIMIT` 10, `RATE_LIMIT_LOGIN_TTL_MS` 60000) with JSDoc in `src/config/configuration.ts`. Extend `tests/unit/config/configuration.spec.ts` (defaults and overrides). Commit `feat(US-02): add refresh token and login rate limit settings`.
 - [ ] T002 [P] In `tests/component/support/test-app.ts`, add `useTestSigningKey()`: generate a 2048-bit RSA pair in memory, write the PKCS#8 private key to a temp file, set `JWT_PRIVATE_KEY_PATH`, `JWT_ISSUER=ecommerce-identity-test`, `JWT_AUDIENCE=ecommerce-test`, and return the public `KeyObject`. Call it from `startPostgres()` so every existing component test has a key (R14). Commit `test(US-02): provide a temporary signing key to component tests`.
 
 ---

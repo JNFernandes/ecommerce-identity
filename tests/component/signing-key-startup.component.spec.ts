@@ -2,7 +2,7 @@ import { generateKeyPairSync, KeyObject } from 'node:crypto';
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { INestApplication } from '@nestjs/common';
+import { INestApplication, LoggerService } from '@nestjs/common';
 import { calculateJwkThumbprint, decodeProtectedHeader, exportJWK } from 'jose';
 import request from 'supertest';
 import { StartedPostgreSqlContainer } from '@testcontainers/postgresql';
@@ -11,8 +11,12 @@ import {
   createTestApp,
   startPostgres,
   TEST_JWT_ISSUER,
+  tempKeyDir,
+  useJwksCacheSeconds,
+  useRetiredPublicKeys,
   useTestSigningKey,
   useUnreachableKafka,
+  writeTestKeyPair,
 } from './support/test-app';
 
 jest.setTimeout(180_000);
@@ -26,9 +30,45 @@ function tempFile(content: string): string {
   return path;
 }
 
+/** Logger that keeps every line it receives, so tests can inspect what startup logged. */
+class CapturingLogger implements LoggerService {
+  /** Every logged message and parameter, stringified. */
+  readonly lines: string[] = [];
+
+  log(...parts: unknown[]): void {
+    this.capture(parts);
+  }
+
+  error(...parts: unknown[]): void {
+    this.capture(parts);
+  }
+
+  warn(...parts: unknown[]): void {
+    this.capture(parts);
+  }
+
+  debug(...parts: unknown[]): void {
+    this.capture(parts);
+  }
+
+  verbose(...parts: unknown[]): void {
+    this.capture(parts);
+  }
+
+  private capture(parts: unknown[]): void {
+    this.lines.push(
+      parts
+        .map((part) =>
+          part instanceof Error ? `${part.message} ${part.stack ?? ''}` : String(part),
+        )
+        .join(' '),
+    );
+  }
+}
+
 /** Starts the app and returns the startup error, or fails when it starts. */
-async function startupError(): Promise<Error> {
-  const outcome: unknown = await createTestApp().then(
+async function startupError(logger?: LoggerService): Promise<Error> {
+  const outcome: unknown = await createTestApp(logger).then(
     async (app) => {
       await app.close();
       return undefined;
@@ -71,7 +111,80 @@ describe('signing key at startup (component)', () => {
 
     afterEach(() => {
       useTestSigningKey();
+      useRetiredPublicKeys(undefined);
+      useJwksCacheSeconds(undefined);
     });
+
+    /** Starts with the current settings, expecting failure; checks message and logs hold no key. */
+    async function failsWithoutKeyMaterial(expected: string): Promise<void> {
+      const logger = new CapturingLogger();
+
+      const error = await startupError(logger);
+
+      expect(error.message).toContain(expected);
+      expectNoKeyMaterial(error);
+      for (const line of logger.lines) {
+        expect(line).not.toContain('BEGIN');
+        expect(line).not.toContain('MII');
+      }
+    }
+
+    it('should refuse to start when a retired file holds a private key', async () => {
+      const retired = writeTestKeyPair(tempKeyDir(), 'old');
+      useRetiredPublicKeys([retired.privateKeyPath]);
+
+      await failsWithoutKeyMaterial(`retired keys must be public only: ${retired.privateKeyPath}`);
+    });
+
+    it('should refuse to start when a retired file is missing', async () => {
+      const path = join(tmpdir(), 'no-such-dir', 'old-public.pem');
+      useRetiredPublicKeys([path]);
+
+      await failsWithoutKeyMaterial(`retired public key file not found: ${path}`);
+    });
+
+    it('should refuse to start when the active public key is listed as retired', async () => {
+      const active = useTestSigningKey();
+      useRetiredPublicKeys([active.publicKeyPath]);
+
+      await failsWithoutKeyMaterial(
+        `duplicate key id: ${active.privateKeyPath} and ${active.publicKeyPath} hold the same key`,
+      );
+    });
+
+    it('should refuse to start with a 1024-bit retired key', async () => {
+      const weak = writeTestKeyPair(tempKeyDir(), 'weak', 1024);
+      useRetiredPublicKeys([weak.publicKeyPath]);
+
+      await failsWithoutKeyMaterial(`at least 2048 bits, got 1024: ${weak.publicKeyPath}`);
+    });
+
+    it.each(['-1', 'abc'])('should refuse to start when JWKS_CACHE_SECONDS is %p', async (raw) => {
+      useJwksCacheSeconds(raw);
+
+      await failsWithoutKeyMaterial('JWKS_CACHE_SECONDS must be a non-negative integer');
+    });
+
+    it.each([undefined, ''])(
+      'should start and publish only the active key when the retired list is %p',
+      async (raw) => {
+        if (raw === undefined) {
+          useRetiredPublicKeys(undefined);
+        } else {
+          process.env.JWT_RETIRED_PUBLIC_KEY_PATHS = raw;
+        }
+        const app = await createTestApp();
+        try {
+          const response = await request(app.getHttpServer())
+            .get('/.well-known/jwks.json')
+            .expect(200);
+
+          expect((response.body as { keys: unknown[] }).keys).toHaveLength(1);
+        } finally {
+          await app.close();
+        }
+      },
+    );
 
     it('should refuse to start when JWT_PRIVATE_KEY_PATH is unset', async () => {
       delete process.env.JWT_PRIVATE_KEY_PATH;

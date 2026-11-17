@@ -40,7 +40,7 @@ describe('JwksController', () => {
   it('should send the precomputed body with JSON, caching and ETag headers', () => {
     const { res, headers, status, end } = fakeResponse();
 
-    controller.getKeySet(res);
+    controller.getKeySet(undefined, res);
 
     expect(status).toHaveBeenCalledWith(200);
     expect(headers).toEqual({
@@ -49,6 +49,28 @@ describe('JwksController', () => {
       etag: '"etag-value"',
       'content-length': Buffer.byteLength(snapshot.body),
     });
+    expect(end).toHaveBeenCalledWith(snapshot.body);
+  });
+
+  it.each(['"etag-value"', '"old", W/"etag-value"', '*'])(
+    'should answer 304 with the caching headers and no body for If-None-Match %p',
+    (ifNoneMatch) => {
+      const { res, headers, status, end } = fakeResponse();
+
+      controller.getKeySet(ifNoneMatch, res);
+
+      expect(status).toHaveBeenCalledWith(304);
+      expect(headers).toEqual({ 'cache-control': 'public, max-age=300', etag: '"etag-value"' });
+      expect(end).toHaveBeenCalledWith();
+    },
+  );
+
+  it('should send the full body for a stale If-None-Match', () => {
+    const { res, status, end } = fakeResponse();
+
+    controller.getKeySet('"stale"', res);
+
+    expect(status).toHaveBeenCalledWith(200);
     expect(end).toHaveBeenCalledWith(snapshot.body);
   });
 

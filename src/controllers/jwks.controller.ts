@@ -1,10 +1,18 @@
-import { Controller, Get, Res } from '@nestjs/common';
-import { ApiOkResponse, ApiOperation, ApiProduces, ApiTags } from '@nestjs/swagger';
+import { Controller, Get, Headers, Res } from '@nestjs/common';
+import {
+  ApiHeader,
+  ApiOkResponse,
+  ApiOperation,
+  ApiProduces,
+  ApiResponse,
+  ApiTags,
+} from '@nestjs/swagger';
 import { SkipThrottle } from '@nestjs/throttler';
 import { Response } from 'express';
 import { JwksResponseDto } from '../dto/jwks-response.dto';
 import { JwksService } from '../services/jwks.service';
 import { REGISTER_THROTTLER } from './auth.controller';
+import { ifNoneMatchMatches } from './if-none-match';
 import { LOGIN_EMAIL_THROTTLER, LOGIN_IP_THROTTLER } from './login-throttle.tracker';
 
 /**
@@ -23,8 +31,11 @@ export class JwksController {
   constructor(private readonly jwksService: JwksService) {}
 
   /**
-   * Sends the precomputed key set, so the bytes sent are the bytes the `ETag` hashes.
+   * Sends the precomputed key set, so the bytes sent are the bytes the `ETag` hashes. When
+   * `If-None-Match` matches the current `ETag`, answers 304 with the same caching headers and no
+   * body.
    *
+   * @param ifNoneMatch The `If-None-Match` request header, if any.
    * @param res The Express response, written directly.
    */
   @Get('jwks.json')
@@ -38,12 +49,27 @@ export class JwksController {
     type: JwksResponseDto,
     description: 'The key set, with `Cache-Control: public, max-age=<n>` and a strong `ETag`',
   })
-  getKeySet(@Res() res: Response): void {
+  @ApiResponse({
+    status: 304,
+    description:
+      'Not modified: `If-None-Match` matches the current `ETag`. Same `Cache-Control` and `ETag`, no body',
+  })
+  @ApiHeader({
+    name: 'If-None-Match',
+    required: false,
+    description: 'An `ETag` from an earlier response, a comma-separated list of them, or `*`',
+  })
+  getKeySet(@Headers('if-none-match') ifNoneMatch: string | undefined, @Res() res: Response): void {
     const { body, etag, cacheControl } = this.jwksService.current();
-    res.status(200);
-    res.setHeader('Content-Type', 'application/json; charset=utf-8');
     res.setHeader('Cache-Control', cacheControl);
     res.setHeader('ETag', etag);
+    if (ifNoneMatchMatches(ifNoneMatch, etag)) {
+      res.status(304);
+      res.end();
+      return;
+    }
+    res.status(200);
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
     res.setHeader('Content-Length', Buffer.byteLength(body));
     res.end(body);
   }

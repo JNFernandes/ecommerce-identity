@@ -3,21 +3,51 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { CqrsModule } from '@nestjs/cqrs';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ThrottlerModule } from '@nestjs/throttler';
-import configuration, { DatabaseConfig, RateLimitConfig } from './config/configuration';
+import configuration, { DatabaseConfig, JwtConfig, RateLimitConfig } from './config/configuration';
 import { OutboundDeadLetterEntity } from './infra/database/entities/outbound-dead-letter.entity';
+import { RefreshTokenEntity } from './infra/database/entities/refresh-token.entity';
 import { UserEntity } from './infra/database/entities/user.entity';
 import { buildTypeOrmOptions } from './infra/database/typeorm-options';
 import { KafkaModule } from './infra/kafka/kafka.module';
 import { AuthController, REGISTER_THROTTLER } from './controllers/auth.controller';
 import { HealthController } from './controllers/health.controller';
+import {
+  LOGIN_EMAIL_THROTTLER,
+  LOGIN_IP_THROTTLER,
+  loginThrottleTracker,
+} from './controllers/login-throttle.tracker';
 import { HealthService } from './services/health.service';
 import { OutboundDeadLetterRepository } from './repositories/outbound-dead-letter.repository';
+import { RefreshTokenRepository } from './repositories/refresh-token.repository';
 import { UserRepository } from './repositories/user.repository';
 import { Argon2PasswordHasher } from './infra/security/argon2-password-hasher';
+import { CryptoRefreshTokenGenerator } from './infra/security/crypto-refresh-token-generator';
+import { JoseTokenIssuer } from './infra/security/jose-token-issuer';
+import { loadSigningKey, SigningKey } from './infra/security/signing-key';
+import { SystemClock } from './infra/time/system-clock';
+import { Clock } from './services/ports/clock';
 import { PasswordHasher } from './services/ports/password-hasher';
+import { RefreshTokenGenerator } from './services/ports/refresh-token-generator';
+import { TokenIssuer } from './services/ports/token-issuer';
 import { UserEventPublisher } from './services/ports/user-event-publisher';
 import { UserEventsProducer } from './infra/kafka/user-events.producer';
+import { LoginService } from './services/login.service';
 import { RegisterCustomerService } from './services/register-customer.service';
+
+/**
+ * Builds the access token issuer, failing fast when `JWT_ISSUER` or `JWT_AUDIENCE` is unset so the
+ * app never starts unable to sign valid tokens.
+ */
+function createTokenIssuer(signingKey: SigningKey, configService: ConfigService): TokenIssuer {
+  const { issuer, audience, accessTtlSeconds } = configService.getOrThrow<JwtConfig>('jwt');
+  if (issuer === undefined) {
+    throw new Error('JWT_ISSUER is not set');
+  }
+  if (audience === undefined) {
+    throw new Error('JWT_AUDIENCE is not set');
+  }
+  return new JoseTokenIssuer(signingKey, { issuer, audience, accessTtlSeconds });
+}
 
 /** Root module of the identity service. */
 @Module({
@@ -28,12 +58,26 @@ import { RegisterCustomerService } from './services/register-customer.service';
       useFactory: (configService: ConfigService) =>
         buildTypeOrmOptions(configService.getOrThrow<DatabaseConfig>('database')),
     }),
-    TypeOrmModule.forFeature([UserEntity, OutboundDeadLetterEntity]),
+    TypeOrmModule.forFeature([UserEntity, OutboundDeadLetterEntity, RefreshTokenEntity]),
     ThrottlerModule.forRootAsync({
       inject: [ConfigService],
       useFactory: (configService: ConfigService) => {
-        const { register } = configService.getOrThrow<RateLimitConfig>('rateLimit');
-        return [{ name: REGISTER_THROTTLER, limit: register.limit, ttl: register.ttlMs }];
+        const { register, login } = configService.getOrThrow<RateLimitConfig>('rateLimit');
+        return [
+          { name: REGISTER_THROTTLER, limit: register.limit, ttl: register.ttlMs },
+          {
+            name: LOGIN_IP_THROTTLER,
+            limit: login.limit,
+            ttl: login.ttlMs,
+            getTracker: loginThrottleTracker('ip'),
+          },
+          {
+            name: LOGIN_EMAIL_THROTTLER,
+            limit: login.limit,
+            ttl: login.ttlMs,
+            getTracker: loginThrottleTracker('email'),
+          },
+        ];
       },
     }),
     KafkaModule,
@@ -44,9 +88,20 @@ import { RegisterCustomerService } from './services/register-customer.service';
     HealthService,
     UserRepository,
     OutboundDeadLetterRepository,
+    RefreshTokenRepository,
     { provide: PasswordHasher, useClass: Argon2PasswordHasher },
+    {
+      provide: SigningKey,
+      inject: [ConfigService],
+      useFactory: (configService: ConfigService): Promise<SigningKey> =>
+        loadSigningKey(configService.getOrThrow<JwtConfig>('jwt').privateKeyPath),
+    },
+    { provide: TokenIssuer, inject: [SigningKey, ConfigService], useFactory: createTokenIssuer },
+    { provide: RefreshTokenGenerator, useClass: CryptoRefreshTokenGenerator },
+    { provide: Clock, useClass: SystemClock },
     { provide: UserEventPublisher, useClass: UserEventsProducer },
     RegisterCustomerService,
+    LoginService,
   ],
 })
 export class AppModule {}

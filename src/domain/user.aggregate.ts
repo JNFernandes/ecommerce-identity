@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { Email } from './email.value-object';
+import { InvalidCredentialsError } from './errors/invalid-credentials.error';
 import { UserRegistered } from './events/user-registered.event';
 import { Role } from './role.enum';
 import { UserName } from './user-name.value-object';
@@ -28,6 +29,8 @@ export interface UserProps {
   createdAt: Date;
   /** Last update time. */
   updatedAt: Date;
+  /** Time of the last successful login; `null` until the first one. */
+  lastLoginAt: Date | null;
 }
 
 /** The user aggregate: an account that holds credentials and roles. */
@@ -61,6 +64,7 @@ export class User {
       status: UserStatus.ACTIVE,
       createdAt: now,
       updatedAt: now,
+      lastLoginAt: null,
     });
     user.domainEvents.push(
       new UserRegistered({
@@ -126,6 +130,30 @@ export class User {
   /** Last update time. */
   get updatedAt(): Date {
     return this.props.updatedAt;
+  }
+
+  /** Time of the last successful login, or `null` if the user never logged in. */
+  get lastLoginAt(): Date | null {
+    return this.props.lastLoginAt;
+  }
+
+  /** Whether the user may log in: only `ACTIVE` users can. */
+  canLogin(): boolean {
+    return this.props.status === UserStatus.ACTIVE;
+  }
+
+  /**
+   * Records a successful login. Leaves `updatedAt` unchanged, because a login does not change the
+   * account.
+   *
+   * @param at The login time.
+   * @throws InvalidCredentialsError When the user may not log in (see {@link User.canLogin}).
+   */
+  recordLogin(at: Date): void {
+    if (!this.canLogin()) {
+      throw new InvalidCredentialsError();
+    }
+    this.props.lastLoginAt = at;
   }
 
   /**

@@ -13,6 +13,10 @@ Controller → Service → Domain → Repository (Constitution Principle I).
 - `POST /auth/register` — `AuthController` → `CommandBus` → `RegisterCustomerService`. Public,
   rate limited per client IP (`ThrottlerGuard`, throttler `register`). Domain errors map to `400`
   (`UserValidationError`) and `409` (`DuplicateEmailError`).
+- `POST /auth/login` — `AuthController` → `CommandBus` → `LoginService`. Public, rate limited by
+  the `login-ip` and `login-email` throttlers (`controllers/login-throttle.tracker.ts`); each route
+  skips the other route's throttlers with `@SkipThrottle`. `InvalidCredentialsError` maps to the
+  generic `401`, `UserValidationError` to `400`.
 - `GET /docs`, `GET /docs-json` — Swagger UI and OpenAPI document (`app.swagger.ts`).
 
 **Register write flow** (`RegisterCustomerService`):
@@ -32,6 +36,28 @@ Controller → Service → Domain → Repository (Constitution Principle I).
 - `infra/security/` — `Argon2PasswordHasher` (argon2id, parameters from `ARGON2_*`).
 - `infra/kafka/user-events.producer.ts` — `UserEventsProducer`, the Kafka adapter of
   `UserEventPublisher` (through `LazyKafkaProducer`).
+
+**Login flow** (`LoginService`, no event published):
+
+1. `Email.create`, then `UserRepository.findByEmail` (`lower(email)`).
+2. Exactly one `PasswordHasher.verify`, against `dummyHash()` when the user is unknown; then the
+   user, the result and `User.canLogin()` are checked. Each failure logs its reason and IP and
+   throws `InvalidCredentialsError`.
+3. `User.recordLogin(Clock.now())`, `TokenIssuer.issue`, `RefreshTokenGenerator.generate`,
+   `RefreshToken.issue`, then `RefreshTokenRepository.saveWithLogin` (token hash and
+   `users.lastLoginAt` in one transaction).
+
+**Added by US-02:**
+
+- `services/ports/` — `TokenIssuer`, `RefreshTokenGenerator`, `Clock`; `PasswordHasher` gains
+  `verify` and `dummyHash`.
+- `infra/security/` — `signing-key.ts` (`loadSigningKey`, `SigningKey` token, `SigningKeyError`:
+  RSA ≥ 2048 bits from `JWT_PRIVATE_KEY_PATH`, `kid` = RFC 7638 thumbprint), `JoseTokenIssuer`
+  (RS256), `CryptoRefreshTokenGenerator` (256-bit base64url value, SHA-256 hash).
+- `infra/time/` — `SystemClock`, the `Clock` adapter.
+- `repositories/refresh-token.repository.ts` — `RefreshTokenRepository` over `refresh_tokens`.
+- `AppModule` loads the signing key with an async factory and builds `TokenIssuer` only when
+  `JWT_ISSUER` and `JWT_AUDIENCE` are set, so the app fails fast at startup otherwise.
 
 **Domain events produced:** `identity.user-registered` (`UserRegistered`, after the user is
 committed; contract in `ecommerce-infra/docs/events.md`).

@@ -43,6 +43,8 @@ export interface JwtConfig {
   accessTtlSeconds: number;
   /** Path of the mounted RS256 private key (`JWT_PRIVATE_KEY_PATH`). Never committed. */
   privateKeyPath: string | undefined;
+  /** Refresh token lifetime in seconds (`JWT_REFRESH_TTL_SECONDS`, default 604800 = 7 days). */
+  refreshTtlSeconds: number;
 }
 
 /** argon2id password hashing parameters (`ARGON2_*`). */
@@ -70,6 +72,11 @@ export interface RateLimitConfig {
    * `RATE_LIMIT_REGISTER_TTL_MS`, default 60000).
    */
   register: RateLimitRule;
+  /**
+   * `POST /auth/login`, applied per client IP and per normalized email
+   * (`RATE_LIMIT_LOGIN_LIMIT`, default 10; `RATE_LIMIT_LOGIN_TTL_MS`, default 60000).
+   */
+  login: RateLimitRule;
 }
 
 /** Cross-origin settings. */
@@ -148,6 +155,7 @@ export default (): AppConfig => ({
     audience: optional(process.env.JWT_AUDIENCE),
     accessTtlSeconds: parseInteger(process.env.JWT_ACCESS_TTL_SECONDS, 900),
     privateKeyPath: optional(process.env.JWT_PRIVATE_KEY_PATH),
+    refreshTtlSeconds: parseInteger(process.env.JWT_REFRESH_TTL_SECONDS, 604800),
   },
   argon2: {
     memoryCostKib: parseInteger(process.env.ARGON2_MEMORY_COST_KIB, 65536),
@@ -158,6 +166,10 @@ export default (): AppConfig => ({
     register: {
       limit: parseInteger(process.env.RATE_LIMIT_REGISTER_LIMIT, 5),
       ttlMs: parseInteger(process.env.RATE_LIMIT_REGISTER_TTL_MS, 60000),
+    },
+    login: {
+      limit: parseInteger(process.env.RATE_LIMIT_LOGIN_LIMIT, 10),
+      ttlMs: parseInteger(process.env.RATE_LIMIT_LOGIN_TTL_MS, 60000),
     },
   },
 });

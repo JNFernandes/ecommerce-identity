@@ -14,11 +14,14 @@ const VARIABLES = [
   'JWT_AUDIENCE',
   'JWT_ACCESS_TTL_SECONDS',
   'JWT_PRIVATE_KEY_PATH',
+  'JWT_REFRESH_TTL_SECONDS',
   'ARGON2_MEMORY_COST_KIB',
   'ARGON2_TIME_COST',
   'ARGON2_PARALLELISM',
   'RATE_LIMIT_REGISTER_LIMIT',
   'RATE_LIMIT_REGISTER_TTL_MS',
+  'RATE_LIMIT_LOGIN_LIMIT',
+  'RATE_LIMIT_LOGIN_TTL_MS',
 ];
 
 describe('configuration', () => {
@@ -64,6 +67,27 @@ describe('configuration', () => {
     expect(jwt.audience).toBeUndefined();
     expect(jwt.privateKeyPath).toBeUndefined();
     expect(jwt.accessTtlSeconds).toBe(900);
+  });
+
+  it('should default the refresh token lifetime to 7 days', () => {
+    expect(configuration().jwt.refreshTtlSeconds).toBe(604800);
+  });
+
+  it('should read the refresh token lifetime from the environment', () => {
+    process.env.JWT_REFRESH_TTL_SECONDS = '3600';
+
+    expect(configuration().jwt.refreshTtlSeconds).toBe(3600);
+  });
+
+  it('should default the login rate limit to 10 requests per minute', () => {
+    expect(configuration().rateLimit.login).toEqual({ limit: 10, ttlMs: 60000 });
+  });
+
+  it('should read the login rate limit from the environment', () => {
+    process.env.RATE_LIMIT_LOGIN_LIMIT = '3';
+    process.env.RATE_LIMIT_LOGIN_TTL_MS = '2000';
+
+    expect(configuration().rateLimit.login).toEqual({ limit: 3, ttlMs: 2000 });
   });
 
   it('should default argon2 to 64 MiB, 3 iterations and parallelism 4', () => {

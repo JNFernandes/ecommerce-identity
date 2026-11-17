@@ -48,6 +48,20 @@ export class UserRepository {
     return entity === null ? null : UserRepository.toDomain(entity);
   }
 
+  /**
+   * Loads a user by email, compared on `lower(email)` (the unique index).
+   *
+   * @param normalized The normalized email (see `Email.normalize`).
+   * @returns The user, or `null` when none exists.
+   */
+  async findByEmail(normalized: string): Promise<User | null> {
+    const entity = await this.repository
+      .createQueryBuilder('user')
+      .where('lower(user.email) = :email', { email: normalized })
+      .getOne();
+    return entity === null ? null : UserRepository.toDomain(entity);
+  }
+
   private static toEntity(user: User): UserEntity {
     const entity = new UserEntity();
     entity.id = user.id;
@@ -59,6 +73,7 @@ export class UserRepository {
     entity.status = user.status;
     entity.createdAt = user.createdAt;
     entity.updatedAt = user.updatedAt;
+    entity.lastLoginAt = user.lastLoginAt;
     return entity;
   }
 
@@ -73,6 +88,7 @@ export class UserRepository {
       status: entity.status,
       createdAt: entity.createdAt,
       updatedAt: entity.updatedAt,
+      lastLoginAt: entity.lastLoginAt,
     });
   }
 }

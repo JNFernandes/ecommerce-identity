@@ -7,6 +7,7 @@ import { PostgreSqlContainer, StartedPostgreSqlContainer } from '@testcontainers
 import { AppModule } from '../../src/app.module';
 import { configureApp } from '../../src/app.setup';
 import { configureSwagger } from '../../src/app.swagger';
+import { useTestSigningKey } from './support/test-app';
 
 jest.setTimeout(180_000);
 
@@ -37,6 +38,7 @@ describe('GET /health (component, Kafka not running)', () => {
     process.env.DATABASE_PASSWORD = container.getPassword();
     process.env.DATABASE_MIGRATIONS_RUN = 'true';
     process.env.KAFKA_BROKERS = `127.0.0.1:${await closedPort()}`;
+    useTestSigningKey();
 
     const started = Date.now();
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();

@@ -38,7 +38,7 @@ describe('RegisterCustomerService', () => {
     warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
     error = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
     service = new RegisterCustomerService(
-      { hash } as PasswordHasher,
+      { hash, verify: jest.fn(), dummyHash: jest.fn() } as PasswordHasher,
       { save } as unknown as UserRepository,
       { publishUserRegistered } as UserEventPublisher,
       { recordFailure } as unknown as OutboundDeadLetterRepository,

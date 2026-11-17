@@ -63,6 +63,53 @@ describe('UserRepository (integration)', () => {
     expect(loaded?.pullDomainEvents()).toEqual([]);
   });
 
+  it('should round trip lastLoginAt', async () => {
+    const user = customer('last-login@example.com');
+    await repository.save(user);
+    expect((await repository.findById(user.id))?.lastLoginAt).toBeNull();
+
+    const loginAt = new Date('2026-11-17T12:00:00.000Z');
+    user.recordLogin(loginAt);
+    await repository.save(user);
+
+    expect((await repository.findById(user.id))?.lastLoginAt).toEqual(loginAt);
+  });
+
+  it('should find a user by its normalized email', async () => {
+    const user = customer('find-me@example.com');
+    await repository.save(user);
+
+    const loaded = await repository.findByEmail('find-me@example.com');
+
+    expect(loaded?.id).toBe(user.id);
+    expect(loaded?.passwordHash).toBe('$argon2id$hash');
+  });
+
+  it('should find a user stored with another case', async () => {
+    const fresh = customer('placeholder@example.com');
+    // Bypass normalization to prove the lookup compares on lower(email).
+    await repository.save(
+      User.restore({
+        id: fresh.id,
+        customerId: fresh.customerId,
+        email: { value: 'Mixed.Case@Example.com' } as Email,
+        name: fresh.name,
+        passwordHash: fresh.passwordHash,
+        roles: fresh.roles,
+        status: fresh.status,
+        createdAt: fresh.createdAt,
+        updatedAt: fresh.updatedAt,
+        lastLoginAt: null,
+      }),
+    );
+
+    await expect(repository.findByEmail('mixed.case@example.com')).resolves.not.toBeNull();
+  });
+
+  it('should return null for an unknown email', async () => {
+    await expect(repository.findByEmail('nobody@example.com')).resolves.toBeNull();
+  });
+
   it('should return null for an unknown id', async () => {
     await expect(repository.findById('00000000-0000-4000-8000-000000000000')).resolves.toBeNull();
   });
@@ -81,6 +128,7 @@ describe('UserRepository (integration)', () => {
       status: fresh.status,
       createdAt: fresh.createdAt,
       updatedAt: fresh.updatedAt,
+      lastLoginAt: fresh.lastLoginAt,
     });
 
     await expect(repository.save(upperCase)).rejects.toBeInstanceOf(DuplicateEmailError);

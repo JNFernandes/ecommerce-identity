@@ -14,6 +14,17 @@ export class Email {
   ) {}
 
   /**
+   * Normalizes a raw email without validating it: trims surrounding whitespace and lowercases it.
+   * Used by {@link Email.create} and wherever the same key must be derived from untrusted input.
+   *
+   * @param raw The address as the client sent it.
+   * @returns The normalized address.
+   */
+  static normalize(raw: string): string {
+    return raw.trim().toLowerCase();
+  }
+
+  /**
    * Normalizes and validates a raw email.
    *
    * @param raw The address as the client sent it.
@@ -21,7 +32,7 @@ export class Email {
    * @throws UserValidationError When the address is too long or badly formed.
    */
   static create(raw: string): Email {
-    const value = raw.trim().toLowerCase();
+    const value = Email.normalize(raw);
     if ([...value].length > EMAIL_MAX_LENGTH) {
       throw new UserValidationError(`email must be at most ${EMAIL_MAX_LENGTH} characters`);
     }

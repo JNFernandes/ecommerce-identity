@@ -38,4 +38,8 @@ export class UserEntity {
 
   @Column({ type: 'timestamptz' })
   updatedAt!: Date;
+
+  /** Time of the last successful login; `null` until the first one. */
+  @Column({ type: 'timestamptz', nullable: true })
+  lastLoginAt!: Date | null;
 }

@@ -36,6 +36,19 @@ Run `npm run build`, `npm run lint`, `npm run format:check` and `npm run test`, 
 four must pass. Fix any failure before moving on. Never commit a failing build, a lint error or
 warning (`--max-warnings 0`), or a formatting violation. Never mark a task complete with a red gate.
 
+## Token economy
+
+- Run the quality gate with quiet flags and report only failures:
+  `npm run build --silent && npm run lint --silent && npm run format:check --silent -- --log-level warn && npm run test --silent -- --silent`.
+  If it passes, just say it passed.
+- Do not re-read a file you just wrote or edited.
+- Read only the files and line ranges you need (search first, then read a range).
+- Read the constitution only for the principles relevant to the task, not the whole file.
+- Keep Spec Kit documents (spec, plan, tasks, research) concise: each decision and its reason in
+  one or two lines.
+- Final summaries: at most 10 lines.
+- Commit after every task (Conventional Commits, after a green gate).
+
 ## Layering
 
 **Controller → Service → Domain → Repository.**

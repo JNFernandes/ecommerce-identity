@@ -7,6 +7,7 @@ Root module of `ecommerce-identity`.
 Controller → Service → Domain → Repository (Constitution Principle I).
 
 **Endpoints:**
+
 - `GET /health` — `HealthController` → `HealthService`. `200` when PostgreSQL answers, `503`
   otherwise; the Kafka producer state is reported but never fails the check.
 - `GET /docs`, `GET /docs-json` — Swagger UI and OpenAPI document (`app.swagger.ts`).

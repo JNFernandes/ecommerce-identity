@@ -6,6 +6,8 @@ import { buildDataSourceOptions } from '../../src/infra/database/typeorm-options
 jest.setTimeout(180_000);
 
 const MIGRATION = 'CreateUsersAndOutboundDeadLetters20261117130000';
+/** Later migrations, undone first so this one can be reverted. */
+const LATER_MIGRATIONS = ['CreateRefreshTokensAndUserLastLogin20261117140000'];
 
 /** Inserts a customer row with the given email. */
 function insertUser(dataSource: DataSource, email: string): Promise<unknown> {
@@ -98,7 +100,9 @@ describe('users and outbound dead-letter migration (integration)', () => {
   });
 
   it('should drop everything on down and re-apply cleanly', async () => {
-    await dataSource.undoLastMigration();
+    for (let undone = 0; undone <= LATER_MIGRATIONS.length; undone += 1) {
+      await dataSource.undoLastMigration();
+    }
 
     const tables = await tableNames(dataSource);
     expect(tables).not.toContain('users');
@@ -109,6 +113,6 @@ describe('users and outbound dead-letter migration (integration)', () => {
     expect(types).toEqual([]);
 
     const applied = await dataSource.runMigrations();
-    expect(applied.map((migration) => migration.name)).toEqual([MIGRATION]);
+    expect(applied.map((migration) => migration.name)).toEqual([MIGRATION, ...LATER_MIGRATIONS]);
   });
 });

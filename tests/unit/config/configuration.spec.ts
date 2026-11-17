@@ -17,6 +17,8 @@ const VARIABLES = [
   'ARGON2_MEMORY_COST_KIB',
   'ARGON2_TIME_COST',
   'ARGON2_PARALLELISM',
+  'RATE_LIMIT_REGISTER_LIMIT',
+  'RATE_LIMIT_REGISTER_TTL_MS',
 ];
 
 describe('configuration', () => {
@@ -74,6 +76,17 @@ describe('configuration', () => {
     process.env.ARGON2_PARALLELISM = '1';
 
     expect(configuration().argon2).toEqual({ memoryCostKib: 1024, timeCost: 2, parallelism: 1 });
+  });
+
+  it('should default the register rate limit to 5 requests per minute', () => {
+    expect(configuration().rateLimit.register).toEqual({ limit: 5, ttlMs: 60000 });
+  });
+
+  it('should read the register rate limit from the environment', () => {
+    process.env.RATE_LIMIT_REGISTER_LIMIT = '100';
+    process.env.RATE_LIMIT_REGISTER_TTL_MS = '1000';
+
+    expect(configuration().rateLimit.register).toEqual({ limit: 100, ttlMs: 1000 });
   });
 
   it('should read every value from the environment', () => {

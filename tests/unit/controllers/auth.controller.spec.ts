@@ -1,7 +1,10 @@
+import { BadRequestException, ConflictException } from '@nestjs/common';
 import { CommandBus } from '@nestjs/cqrs';
 import { RegisterCustomerCommand } from '../../../src/commands/register-customer.command';
 import { AuthController } from '../../../src/controllers/auth.controller';
 import { Email } from '../../../src/domain/email.value-object';
+import { DuplicateEmailError } from '../../../src/domain/errors/duplicate-email.error';
+import { UserValidationError } from '../../../src/domain/errors/user-validation.error';
 import { User } from '../../../src/domain/user.aggregate';
 import { UserName } from '../../../src/domain/user-name.value-object';
 import { RegisterDto } from '../../../src/dto/register.dto';
@@ -34,5 +37,38 @@ describe('AuthController', () => {
     execute.mockResolvedValue(user);
 
     await expect(controller.register(body)).resolves.toEqual(RegisterResponseDto.fromUser(user));
+  });
+
+  it('should map UserValidationError to 400 with its message', async () => {
+    execute.mockRejectedValue(new UserValidationError('email must be a valid email address'));
+
+    const error: unknown = await controller.register(body).catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(BadRequestException);
+    expect((error as BadRequestException).getResponse()).toEqual({
+      statusCode: 400,
+      message: 'email must be a valid email address',
+      error: 'Bad Request',
+    });
+  });
+
+  it('should map DuplicateEmailError to 409 email already registered', async () => {
+    execute.mockRejectedValue(new DuplicateEmailError());
+
+    const error: unknown = await controller.register(body).catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(ConflictException);
+    expect((error as ConflictException).getResponse()).toEqual({
+      statusCode: 409,
+      message: 'email already registered',
+      error: 'Conflict',
+    });
+  });
+
+  it('should rethrow any other error unchanged', async () => {
+    const failure = new Error('database down');
+    execute.mockRejectedValue(failure);
+
+    await expect(controller.register(body)).rejects.toBe(failure);
   });
 });

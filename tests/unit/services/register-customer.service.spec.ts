@@ -1,4 +1,5 @@
 import { RegisterCustomerCommand } from '../../../src/commands/register-customer.command';
+import { DuplicateEmailError } from '../../../src/domain/errors/duplicate-email.error';
 import { UserValidationError } from '../../../src/domain/errors/user-validation.error';
 import { Role } from '../../../src/domain/role.enum';
 import { User } from '../../../src/domain/user.aggregate';
@@ -57,5 +58,13 @@ describe('RegisterCustomerService', () => {
     ).rejects.toBeInstanceOf(UserValidationError);
     expect(hash).not.toHaveBeenCalled();
     expect(save).not.toHaveBeenCalled();
+  });
+
+  it('should propagate DuplicateEmailError from save', async () => {
+    save.mockRejectedValue(new DuplicateEmailError());
+
+    await expect(
+      service.execute(new RegisterCustomerCommand('ana@example.com', 'Ana', PASSWORD)),
+    ).rejects.toBeInstanceOf(DuplicateEmailError);
   });
 });

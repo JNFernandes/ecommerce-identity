@@ -93,7 +93,7 @@ No new packages, no migration, no scaffolding needed (plan: "No new packages", "
 
 - [X] T017 [P] [US4] Create pure `ifNoneMatchMatches(header, etag)` with JSDoc in `src/controllers/if-none-match.ts` (R10: `*` matches; comma list, trim, strip `W/`, compare); unit tests in `tests/unit/controllers/if-none-match.spec.ts` (undefined, exact, list containing it, `W/` prefix, `*`, stale, malformed)
 - [X] T018 [US4] Return 304 (empty body, same `Cache-Control` and `ETag`) when `ifNoneMatchMatches` is true in `src/controllers/jwks.controller.ts`; add Swagger `@ApiResponse({ status: 304 })` and `If-None-Match` `@ApiHeader`; extend `tests/unit/controllers/jwks.controller.spec.ts`
-- [ ] T019 [US4] Component tests in `tests/component/jwks-cache.component.spec.ts`: default `max-age=300`; `JWKS_CACHE_SECONDS=60` and `0`; matching `If-None-Match` → 304 empty body same headers; `*` and list → 304; stale → 200; same keys in two app instances → same `ETag`, different keys → different `ETag`; burst of requests above the login limit → no 429
+- [X] T019 [US4] Component tests in `tests/component/jwks-cache.component.spec.ts`: default `max-age=300`; `JWKS_CACHE_SECONDS=60` and `0`; matching `If-None-Match` → 304 empty body same headers; `*` and list → 304; stale → 200; same keys in two app instances → same `ETag`, different keys → different `ETag`; burst of requests above the login limit → no 429
 
 **Checkpoint**: Endpoint is cache-friendly and never throttled.
 

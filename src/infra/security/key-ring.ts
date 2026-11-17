@@ -94,20 +94,34 @@ function parseActivePrivateKey({ path, pem }: KeyFile): KeyObject {
 }
 
 /**
+ * Parses a retired public key: one `PUBLIC KEY` (SPKI) or `RSA PUBLIC KEY` (PKCS#1) PEM block.
+ * Retired keys only verify; they never sign.
+ */
+function parseRetiredPublicKey({ path, pem }: KeyFile): KeyObject {
+  try {
+    return createPublicKey(pem);
+  } catch {
+    throw new SigningKeyError(`retired public key file does not hold a public key in PEM: ${path}`);
+  }
+}
+
+/**
  * Builds the key ring from key files already read. Pure: no file-system access.
  *
- * @param active The active private key file (`JWT_PRIVATE_KEY_PATH`).
- * @param retired Retired public key files. Not supported yet: must be empty.
- * @returns The ring with the active key first in the published set.
+ * @param active The active private key file (`JWT_PRIVATE_KEY_PATH`); the only key that signs.
+ * @param retired Retired public key files (`JWT_RETIRED_PUBLIC_KEY_PATHS`), published for
+ * verification only.
+ * @returns The ring publishing the active key first, then the retired keys in the given order.
  * @throws SigningKeyError When a key is unusable. Messages name the file, never the content.
  */
 export async function buildKeyRing(active: KeyFile, retired: readonly KeyFile[]): Promise<KeyRing> {
-  if (retired.length > 0) {
-    throw new SigningKeyError('retired public keys are not supported yet');
-  }
   const privateKey = parseActivePrivateKey(active);
   const activeJwk = await toPublicJwk(createPublicKey(privateKey));
-  return new KeyRing(new LoadedSigningKey(privateKey, activeJwk.kid), [activeJwk]);
+  const retiredJwks: PublicJwk[] = [];
+  for (const file of retired) {
+    retiredJwks.push(await toPublicJwk(parseRetiredPublicKey(file)));
+  }
+  return new KeyRing(new LoadedSigningKey(privateKey, activeJwk.kid), [activeJwk, ...retiredJwks]);
 }
 
 /** Where {@link loadKeyRing} reads the keys from. */

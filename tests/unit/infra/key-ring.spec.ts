@@ -126,9 +126,79 @@ describe('buildKeyRing', () => {
     });
   });
 
-  it('should reject retired keys until they are supported', async () => {
-    await expectFailure(activeFile(pem(rsa.privateKey)), 'not supported yet', [
-      { path: 'keys/old-public.pem', pem: 'irrelevant' },
-    ]);
+  describe('retired keys', () => {
+    const retiredA = generateKeyPairSync('rsa', { modulusLength: 2048 });
+    const retiredB = generateKeyPairSync('rsa', { modulusLength: 2048 });
+
+    /** A retired key file holding `key` in the given public PEM format. */
+    const retiredFile = (key: KeyObject, type: 'spki' | 'pkcs1', name: string): KeyFile => ({
+      path: `keys/${name}-public.pem`,
+      pem: key.export({ type, format: 'pem' }).toString(),
+    });
+
+    /** RFC 7638 thumbprint of a public key. */
+    const thumbprint = async (key: KeyObject): Promise<string> =>
+      calculateJwkThumbprint(await exportJWK(key), 'sha256');
+
+    it.each(['spki', 'pkcs1'] as const)(
+      'should accept a %s public key and publish it after the active key',
+      async (type) => {
+        const ring = await buildKeyRing(activeFile(pem(rsa.privateKey)), [
+          retiredFile(retiredA.publicKey, type, 'a'),
+        ]);
+
+        expect(ring.keys.map((key) => key.kid)).toEqual([
+          await thumbprint(rsa.publicKey),
+          await thumbprint(retiredA.publicKey),
+        ]);
+        expect(Object.keys(ring.keys[1])).toEqual(['kty', 'use', 'alg', 'kid', 'n', 'e']);
+      },
+    );
+
+    it('should keep the configured order of several retired keys', async () => {
+      const ring = await buildKeyRing(activeFile(pem(rsa.privateKey)), [
+        retiredFile(retiredB.publicKey, 'spki', 'b'),
+        retiredFile(retiredA.publicKey, 'pkcs1', 'a'),
+      ]);
+
+      expect(ring.keys.map((key) => key.kid)).toEqual([
+        await thumbprint(rsa.publicKey),
+        await thumbprint(retiredB.publicKey),
+        await thumbprint(retiredA.publicKey),
+      ]);
+      expect(JSON.parse(ring.json)).toEqual({ keys: ring.keys });
+    });
+
+    it('should sign only with the active key', async () => {
+      const ring = await buildKeyRing(activeFile(pem(rsa.privateKey)), [
+        retiredFile(retiredA.publicKey, 'spki', 'a'),
+      ]);
+
+      expect(ring.activeKey.kid).toBe(await thumbprint(rsa.publicKey));
+      expect(ring.activeKey.privateKey.type).toBe('private');
+    });
+
+    it('should change the ETag when the key set changes', async () => {
+      const active = activeFile(pem(rsa.privateKey));
+
+      const alone = await buildKeyRing(active, []);
+      const withA = await buildKeyRing(active, [retiredFile(retiredA.publicKey, 'spki', 'a')]);
+      const withAB = await buildKeyRing(active, [
+        retiredFile(retiredA.publicKey, 'spki', 'a'),
+        retiredFile(retiredB.publicKey, 'spki', 'b'),
+      ]);
+      const withBA = await buildKeyRing(active, [
+        retiredFile(retiredB.publicKey, 'spki', 'b'),
+        retiredFile(retiredA.publicKey, 'spki', 'a'),
+      ]);
+
+      expect(new Set([alone.etag, withA.etag, withAB.etag, withBA.etag]).size).toBe(4);
+    });
+
+    it('should name the file when a retired file is not a key', async () => {
+      await expectFailure(activeFile(pem(rsa.privateKey)), 'keys/old-public.pem', [
+        { path: 'keys/old-public.pem', pem: 'hello' },
+      ]);
+    });
   });
 });

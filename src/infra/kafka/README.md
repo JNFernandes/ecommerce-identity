@@ -12,4 +12,4 @@
 - kafkajs logs go through the Nest logger, with repeated connection failures throttled
   (`kafka-log-creator.ts`).
 
-**Endpoints:** none. **Events produced:** none yet (`identity.user-registered` is planned).
+**Endpoints:** none. **Events produced:** `identity.user-registered` (`UserEventsProducer`, adapter of the `UserEventPublisher` port).

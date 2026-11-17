@@ -14,6 +14,11 @@ const VARIABLES = [
   'JWT_AUDIENCE',
   'JWT_ACCESS_TTL_SECONDS',
   'JWT_PRIVATE_KEY_PATH',
+  'ARGON2_MEMORY_COST_KIB',
+  'ARGON2_TIME_COST',
+  'ARGON2_PARALLELISM',
+  'RATE_LIMIT_REGISTER_LIMIT',
+  'RATE_LIMIT_REGISTER_TTL_MS',
 ];
 
 describe('configuration', () => {
@@ -59,6 +64,29 @@ describe('configuration', () => {
     expect(jwt.audience).toBeUndefined();
     expect(jwt.privateKeyPath).toBeUndefined();
     expect(jwt.accessTtlSeconds).toBe(900);
+  });
+
+  it('should default argon2 to 64 MiB, 3 iterations and parallelism 4', () => {
+    expect(configuration().argon2).toEqual({ memoryCostKib: 65536, timeCost: 3, parallelism: 4 });
+  });
+
+  it('should read the argon2 parameters from the environment', () => {
+    process.env.ARGON2_MEMORY_COST_KIB = '1024';
+    process.env.ARGON2_TIME_COST = '2';
+    process.env.ARGON2_PARALLELISM = '1';
+
+    expect(configuration().argon2).toEqual({ memoryCostKib: 1024, timeCost: 2, parallelism: 1 });
+  });
+
+  it('should default the register rate limit to 5 requests per minute', () => {
+    expect(configuration().rateLimit.register).toEqual({ limit: 5, ttlMs: 60000 });
+  });
+
+  it('should read the register rate limit from the environment', () => {
+    process.env.RATE_LIMIT_REGISTER_LIMIT = '100';
+    process.env.RATE_LIMIT_REGISTER_TTL_MS = '1000';
+
+    expect(configuration().rateLimit.register).toEqual({ limit: 100, ttlMs: 1000 });
   });
 
   it('should read every value from the environment', () => {

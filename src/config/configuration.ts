@@ -45,6 +45,33 @@ export interface JwtConfig {
   privateKeyPath: string | undefined;
 }
 
+/** argon2id password hashing parameters (`ARGON2_*`). */
+export interface Argon2Config {
+  /** Memory cost in KiB (`ARGON2_MEMORY_COST_KIB`, default 65536 = 64 MiB). */
+  memoryCostKib: number;
+  /** Number of iterations (`ARGON2_TIME_COST`, default 3). */
+  timeCost: number;
+  /** Degree of parallelism (`ARGON2_PARALLELISM`, default 4). */
+  parallelism: number;
+}
+
+/** Limit for one named throttler: at most `limit` requests per client IP within `ttlMs`. */
+export interface RateLimitRule {
+  /** Maximum requests per window. */
+  limit: number;
+  /** Window length in milliseconds. */
+  ttlMs: number;
+}
+
+/** Per-route rate limits (`RATE_LIMIT_*`). */
+export interface RateLimitConfig {
+  /**
+   * `POST /auth/register` (`RATE_LIMIT_REGISTER_LIMIT`, default 5;
+   * `RATE_LIMIT_REGISTER_TTL_MS`, default 60000).
+   */
+  register: RateLimitRule;
+}
+
 /** Cross-origin settings. */
 export interface CorsConfig {
   /**
@@ -62,6 +89,8 @@ export interface AppConfig {
   database: DatabaseConfig;
   kafka: KafkaConfig;
   jwt: JwtConfig;
+  argon2: Argon2Config;
+  rateLimit: RateLimitConfig;
 }
 
 /** Default HTTP port. */
@@ -119,5 +148,16 @@ export default (): AppConfig => ({
     audience: optional(process.env.JWT_AUDIENCE),
     accessTtlSeconds: parseInteger(process.env.JWT_ACCESS_TTL_SECONDS, 900),
     privateKeyPath: optional(process.env.JWT_PRIVATE_KEY_PATH),
+  },
+  argon2: {
+    memoryCostKib: parseInteger(process.env.ARGON2_MEMORY_COST_KIB, 65536),
+    timeCost: parseInteger(process.env.ARGON2_TIME_COST, 3),
+    parallelism: parseInteger(process.env.ARGON2_PARALLELISM, 4),
+  },
+  rateLimit: {
+    register: {
+      limit: parseInteger(process.env.RATE_LIMIT_REGISTER_LIMIT, 5),
+      ttlMs: parseInteger(process.env.RATE_LIMIT_REGISTER_TTL_MS, 60000),
+    },
   },
 });

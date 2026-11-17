@@ -24,19 +24,72 @@ export const TEST_JWT_ISSUER = 'ecommerce-identity-test';
 /** `aud` used by component tests. */
 export const TEST_JWT_AUDIENCE = 'ecommerce-test';
 
+/** A test RSA key pair written to disk, with the paths the app settings point at. */
+export interface TestKeyPair {
+  /** The public key, so tests can verify issued tokens. */
+  publicKey: KeyObject;
+  /** PKCS#8 private key file (`<name>-private.pem`). */
+  privateKeyPath: string;
+  /** SPKI public key file (`<name>-public.pem`). */
+  publicKeyPath: string;
+}
+
+/** A new empty temp directory for key files. */
+export function tempKeyDir(): string {
+  return mkdtempSync(join(tmpdir(), 'identity-test-key-'));
+}
+
 /**
- * Generates a 2048-bit RSA key pair in memory, writes the PKCS#8 private key to a temp file and
- * points `JWT_PRIVATE_KEY_PATH`, `JWT_ISSUER` and `JWT_AUDIENCE` at test values. Returns the public
- * key so tests can verify issued tokens. Each call replaces the previous key.
+ * Generates an RSA key pair in memory and writes `<name>-private.pem` (PKCS#8, owner-only) and
+ * `<name>-public.pem` (SPKI) to `dir`.
  */
-export function useTestSigningKey(): KeyObject {
-  const { privateKey, publicKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
-  const path = join(mkdtempSync(join(tmpdir(), 'identity-test-key-')), 'private.pem');
-  writeFileSync(path, privateKey.export({ type: 'pkcs8', format: 'pem' }), { mode: 0o600 });
-  process.env.JWT_PRIVATE_KEY_PATH = path;
+export function writeTestKeyPair(dir: string, name: string, modulusLength = 2048): TestKeyPair {
+  const { privateKey, publicKey } = generateKeyPairSync('rsa', { modulusLength });
+  const privateKeyPath = join(dir, `${name}-private.pem`);
+  const publicKeyPath = join(dir, `${name}-public.pem`);
+  writeFileSync(privateKeyPath, privateKey.export({ type: 'pkcs8', format: 'pem' }), {
+    mode: 0o600,
+  });
+  writeFileSync(publicKeyPath, publicKey.export({ type: 'spki', format: 'pem' }));
+  return { publicKey, privateKeyPath, publicKeyPath };
+}
+
+/** Points `JWT_PRIVATE_KEY_PATH` at the pair's private key and sets the test issuer and audience. */
+export function useActiveKey(pair: TestKeyPair): void {
+  process.env.JWT_PRIVATE_KEY_PATH = pair.privateKeyPath;
   process.env.JWT_ISSUER = TEST_JWT_ISSUER;
   process.env.JWT_AUDIENCE = TEST_JWT_AUDIENCE;
-  return publicKey;
+}
+
+/**
+ * Sets `JWT_RETIRED_PUBLIC_KEY_PATHS` to the paths joined by commas, in order; `undefined` unsets
+ * it.
+ */
+export function useRetiredPublicKeys(paths: readonly string[] | undefined): void {
+  if (paths === undefined) {
+    delete process.env.JWT_RETIRED_PUBLIC_KEY_PATHS;
+  } else {
+    process.env.JWT_RETIRED_PUBLIC_KEY_PATHS = paths.join(',');
+  }
+}
+
+/** Sets `JWKS_CACHE_SECONDS` to the raw value; `undefined` unsets it (default 300). */
+export function useJwksCacheSeconds(raw: string | undefined): void {
+  if (raw === undefined) {
+    delete process.env.JWKS_CACHE_SECONDS;
+  } else {
+    process.env.JWKS_CACHE_SECONDS = raw;
+  }
+}
+
+/**
+ * Writes a fresh 2048-bit key pair to a new temp dir and makes it the active key (see
+ * {@link useActiveKey}). Each call replaces the previous key.
+ */
+export function useTestSigningKey(): TestKeyPair {
+  const pair = writeTestKeyPair(tempKeyDir(), 'active');
+  useActiveKey(pair);
+  return pair;
 }
 
 /**

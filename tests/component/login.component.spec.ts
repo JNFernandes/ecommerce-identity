@@ -64,7 +64,7 @@ describe('POST /auth/login (component)', () => {
 
   beforeAll(async () => {
     container = await startPostgres();
-    publicKey = useTestSigningKey();
+    publicKey = useTestSigningKey().publicKey;
     await useUnreachableKafka();
     app = await createTestApp();
     dataSource = app.get(DataSource);

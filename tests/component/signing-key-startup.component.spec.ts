@@ -118,7 +118,7 @@ describe('signing key at startup (component)', () => {
     let publicKey: KeyObject;
 
     beforeAll(() => {
-      publicKey = useTestSigningKey();
+      publicKey = useTestSigningKey().publicKey;
     });
 
     /** Starts the app, logs in once, and returns the access token's kid. */

@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException } from '@nestjs/common';
 import { CommandBus } from '@nestjs/cqrs';
+import { LoginCommand } from '../../../src/commands/login.command';
 import { RegisterCustomerCommand } from '../../../src/commands/register-customer.command';
 import { AuthController } from '../../../src/controllers/auth.controller';
 import { Email } from '../../../src/domain/email.value-object';
@@ -7,6 +8,8 @@ import { DuplicateEmailError } from '../../../src/domain/errors/duplicate-email.
 import { UserValidationError } from '../../../src/domain/errors/user-validation.error';
 import { User } from '../../../src/domain/user.aggregate';
 import { UserName } from '../../../src/domain/user-name.value-object';
+import { LoginDto } from '../../../src/dto/login.dto';
+import { LoginResponseDto } from '../../../src/dto/login-response.dto';
 import { RegisterDto } from '../../../src/dto/register.dto';
 import { RegisterResponseDto } from '../../../src/dto/register-response.dto';
 
@@ -70,5 +73,42 @@ describe('AuthController', () => {
     execute.mockRejectedValue(failure);
 
     await expect(controller.register(body)).rejects.toBe(failure);
+  });
+
+  describe('login', () => {
+    const loginBody: LoginDto = { email: ' Ana@Example.com ', password: ' secret ' };
+    const result = {
+      accessToken: 'signed.access.token',
+      refreshToken: 'opaque-refresh',
+      tokenType: 'Bearer' as const,
+      expiresIn: 900,
+    };
+
+    it('should dispatch a LoginCommand with the raw body and the client IP', async () => {
+      execute.mockResolvedValue(result);
+
+      await controller.login(loginBody, '203.0.113.7');
+
+      expect(execute).toHaveBeenCalledWith(
+        new LoginCommand(' Ana@Example.com ', ' secret ', '203.0.113.7'),
+      );
+    });
+
+    it('should return the response DTO', async () => {
+      execute.mockResolvedValue(result);
+
+      const response = await controller.login(loginBody, '203.0.113.7');
+
+      expect(response).toBeInstanceOf(LoginResponseDto);
+      expect({ ...response }).toEqual(result);
+    });
+
+    it('should map UserValidationError to 400', async () => {
+      execute.mockRejectedValue(new UserValidationError('email must be a valid email address'));
+
+      await expect(controller.login(loginBody, '203.0.113.7')).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+    });
   });
 });

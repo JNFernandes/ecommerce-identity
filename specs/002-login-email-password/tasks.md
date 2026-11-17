@@ -123,7 +123,7 @@ description: "Task list for US-02: Log in with email and password"
 ## Phase 7: Polish and docs
 
 - [X] T029 [P] Update `README.md`: `npm run keys:generate`, new variables (`JWT_REFRESH_TTL_SECONDS`, `RATE_LIMIT_LOGIN_LIMIT`, `RATE_LIMIT_LOGIN_TTL_MS`, required `JWT_PRIVATE_KEY_PATH`/`JWT_ISSUER`/`JWT_AUDIENCE`), the access token claims, and `POST /auth/login` as implemented. Commit `docs(US-02): document login, keys and token settings`.
-- [ ] T030 [P] Update `.env.example` with the new variables, defaults and `./keys/private.pem` hint; update `src/README.md` with the new ports and `infra/security` / `infra/time` adapters. Commit `docs(US-02): describe login settings and ports`.
+- [X] T030 [P] Update `.env.example` with the new variables, defaults and `./keys/private.pem` hint; update `src/README.md` with the new ports and `infra/security` / `infra/time` adapters. Commit `docs(US-02): describe login settings and ports`.
 - [ ] T031 Run the quickstart scenarios in `specs/002-login-email-password/quickstart.md` against local infra and mark them done there. Commit `docs(US-02): mark quickstart validation complete`.
 
 ---

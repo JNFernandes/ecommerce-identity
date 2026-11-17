@@ -2,6 +2,7 @@ import { createHash, generateKeyPairSync, KeyObject } from 'node:crypto';
 import { calculateJwkThumbprint, exportJWK } from 'jose';
 import { buildKeyRing, KeyFile } from '../../../src/infra/security/key-ring';
 import { SigningKeyError } from '../../../src/infra/security/signing-key';
+import { PublicKeySet } from '../../../src/services/ports/public-key-set';
 
 /** PEM export of a private key. */
 function pem(key: KeyObject, type: 'pkcs8' | 'pkcs1' = 'pkcs8'): string {
@@ -96,6 +97,14 @@ describe('buildKeyRing', () => {
       expect(ring.json).toBe(JSON.stringify({ keys: ring.keys }));
       expect(ring.etag).toBe(`"${createHash('sha256').update(ring.json).digest('base64url')}"`);
       expect(ring.etag).not.toMatch(/^W\//);
+    });
+
+    it('should expose the body and ETag through the PublicKeySet port', async () => {
+      const ring = await buildKeyRing(activeFile(pem(rsa.privateKey)), []);
+
+      const port: PublicKeySet = ring;
+
+      expect({ json: port.json, etag: port.etag }).toEqual({ json: ring.json, etag: ring.etag });
     });
 
     it('should give the same body and ETag for the same input', async () => {

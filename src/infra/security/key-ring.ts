@@ -1,6 +1,7 @@
 import { createHash, createPrivateKey, createPublicKey, KeyObject } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { calculateJwkThumbprint, exportJWK } from 'jose';
+import { PublicKeySet } from '../../services/ports/public-key-set';
 import { MIN_RSA_MODULUS_BITS, SigningKey, SigningKeyError } from './signing-key';
 
 /** A key file already read from disk: its path (for error messages only) and its PEM content. */
@@ -41,7 +42,7 @@ class LoadedSigningKey extends SigningKey {
  * The signing key plus every published public key, with the key set serialized once. The body and
  * its `ETag` are computed in the constructor, so serving them needs no crypto or I/O.
  */
-export class KeyRing {
+export class KeyRing implements PublicKeySet {
   /** The JWKS response body: `JSON.stringify({ keys })`. */
   readonly json: string;
   /** Strong `ETag` of {@link json}: the quoted base64url SHA-256 of the body. */

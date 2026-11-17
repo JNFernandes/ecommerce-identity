@@ -39,3 +39,11 @@ We will sign access tokens with **RS256** using `jose`:
 - Revocation of an access token is not possible before it expires; short lifetimes bound the
   exposure, and role or status changes take effect at the next login or refresh.
 - Follow-up: the token story adds the key generation script, the JWKS endpoint and the signer.
+
+## Note (US-03, 2026-11-17)
+
+"More than one active key" is realised as **one signing key plus verify-only retired public
+keys**. The signing key comes from `JWT_PRIVATE_KEY_PATH`; retired keys are public key files listed
+in `JWT_RETIRED_PUBLIC_KEY_PATHS` and published after it. Rotation is manual (generate a named
+pair, make it active, list the previous public key as retired, restart, remove it after the token
+lifetime). The approach above is unchanged.

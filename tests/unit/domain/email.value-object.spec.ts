@@ -7,6 +7,13 @@ function emailOfLength(length: number): string {
   return 'a'.repeat(length - domain.length) + domain;
 }
 
+describe('Email.normalize', () => {
+  it('should trim and lowercase without validating', () => {
+    expect(Email.normalize(' Ana@Example.com ')).toBe('ana@example.com');
+    expect(Email.normalize(' Not An Email ')).toBe('not an email');
+  });
+});
+
 describe('Email', () => {
   it('should trim and lowercase the address', () => {
     expect(Email.create(' Ana@Example.com ').value).toBe('ana@example.com');

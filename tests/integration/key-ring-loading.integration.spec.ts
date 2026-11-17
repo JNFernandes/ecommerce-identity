@@ -3,6 +3,7 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { calculateJwkThumbprint, exportJWK } from 'jose';
+import configuration from '../../src/config/configuration';
 import { loadKeyRing } from '../../src/infra/security/key-ring';
 import { SigningKeyError } from '../../src/infra/security/signing-key';
 
@@ -23,6 +24,7 @@ async function failureFor(activePrivateKeyPath: string | undefined): Promise<Sig
 
 describe('loadKeyRing (integration, real files)', () => {
   const rsa = generateKeyPairSync('rsa', { modulusLength: 2048 });
+  const originalCwd = process.cwd();
 
   it('should load the active private key from a file and publish it', async () => {
     const path = join(tempDir(), 'private.pem');
@@ -60,6 +62,84 @@ describe('loadKeyRing (integration, real files)', () => {
       await kidOf(retiredB.publicKey),
       await kidOf(retiredA.publicKey),
     ]);
+  });
+
+  describe('retired key files', () => {
+    /** Writes the active key to a new temp dir and returns the dir and the active path. */
+    function withActiveKey(): { dir: string; activePath: string } {
+      const dir = tempDir();
+      const activePath = join(dir, 'active-private.pem');
+      writeFileSync(activePath, rsa.privateKey.export({ type: 'pkcs8', format: 'pem' }));
+      return { dir, activePath };
+    }
+
+    /** Loads a ring with the given retired paths and returns the error it fails with. */
+    async function retiredFailure(
+      activePath: string,
+      retiredPublicKeyPaths: string[],
+    ): Promise<SigningKeyError> {
+      const error: unknown = await loadKeyRing({
+        activePrivateKeyPath: activePath,
+        retiredPublicKeyPaths,
+      }).catch((caught: unknown) => caught);
+      expect(error).toBeInstanceOf(SigningKeyError);
+      return error as SigningKeyError;
+    }
+
+    it('should name a missing retired file', async () => {
+      const { dir, activePath } = withActiveKey();
+      const path = join(dir, 'gone-public.pem');
+
+      expect((await retiredFailure(activePath, [path])).message).toBe(
+        `retired public key file not found: ${path}`,
+      );
+    });
+
+    it('should name an unreadable retired file', async () => {
+      const { dir, activePath } = withActiveKey();
+
+      expect((await retiredFailure(activePath, [dir])).message).toContain(
+        `retired public key file is not readable: ${dir}`,
+      );
+    });
+
+    it('should reject the active private key file listed as retired', async () => {
+      const { activePath } = withActiveKey();
+
+      const { message } = await retiredFailure(activePath, [activePath]);
+
+      expect(message).toBe(`retired keys must be public only: ${activePath}`);
+      expect(message).not.toContain('BEGIN');
+    });
+
+    it('should load two retired keys from a raw list with blanks and spaces', async () => {
+      const { dir, activePath } = withActiveKey();
+      process.chdir(dir);
+      for (const name of ['a', 'b']) {
+        const pair = generateKeyPairSync('rsa', { modulusLength: 2048 });
+        writeFileSync(
+          join(dir, `${name}.pem`),
+          pair.publicKey.export({ type: 'spki', format: 'pem' }),
+        );
+      }
+      const saved = process.env.JWT_RETIRED_PUBLIC_KEY_PATHS;
+      process.env.JWT_RETIRED_PUBLIC_KEY_PATHS = ' a.pem, ,b.pem,';
+      try {
+        const { retiredPublicKeyPaths } = configuration().jwt;
+
+        const ring = await loadKeyRing({ activePrivateKeyPath: activePath, retiredPublicKeyPaths });
+
+        expect(retiredPublicKeyPaths).toEqual(['a.pem', 'b.pem']);
+        expect(ring.keys).toHaveLength(3);
+      } finally {
+        process.chdir(originalCwd);
+        if (saved === undefined) {
+          delete process.env.JWT_RETIRED_PUBLIC_KEY_PATHS;
+        } else {
+          process.env.JWT_RETIRED_PUBLIC_KEY_PATHS = saved;
+        }
+      }
+    });
   });
 
   it('should fail when the active path is unset or blank', async () => {

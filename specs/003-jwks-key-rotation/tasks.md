@@ -78,7 +78,7 @@ No new packages, no migration, no scaffolding needed (plan: "No new packages", "
 **Independent test**: Boot with each invalid configuration; startup fails with the right message.
 
 - [X] T014 [US3] Add retired-key rejections in `buildKeyRing` in `src/infra/security/key-ring.ts` (R4, R5): any `PRIVATE` label → "retired keys must be public only" (checked before parsing; no public-half extraction); no block, several blocks or a certificate → unparseable; non-RSA or < 2048 bits; duplicate `kid` across active + retired → error naming both files. Unit tests in `tests/unit/infra/key-ring.spec.ts` for each case, plus asserting no message contains PEM content
-- [ ] T015 [P] [US3] Extend `tests/integration/key-ring-loading.integration.spec.ts`: missing and unreadable retired path named in the error; retired path pointing at the active private file rejected as private material; `" a.pem, ,b.pem,"` loads two keys
+- [X] T015 [P] [US3] Extend `tests/integration/key-ring-loading.integration.spec.ts`: missing and unreadable retired path named in the error; retired path pointing at the active private file rejected as private material; `" a.pem, ,b.pem,"` loads two keys
 - [ ] T016 [US3] Extend `tests/component/signing-key-startup.component.spec.ts`: app fails to start for private retired file, missing retired file, duplicate `kid` (active public key listed as retired), 1024-bit retired key, `JWKS_CACHE_SECONDS=-1` and `abc` (message names the variable); captured logs contain no key material; unset/empty retired list starts and publishes one key
 
 **Checkpoint**: Misconfiguration cannot reach a running service.

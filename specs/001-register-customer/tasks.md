@@ -103,7 +103,7 @@ description: "Task list for US-01: Register a customer account"
 ### Component tests
 
 - [X] T027 [US3] Add `tests/component/support/kafka-testing.ts` (Orders' `createTopicsWhenReady` plus a consumer helper) and extend `tests/component/register-customer.component.spec.ts` with a Kafka testcontainer (replacing the closed-port brokers from T018): exactly one `identity.user-registered` message, key = user id, payload has exactly the 7 fields matching the response, no `outbound_dead_letters` row. Depends on T025. Commit `test(US-01): assert user registered event in component test`.
-- [ ] T028 [US3] Add `tests/component/register-kafka-unavailable.component.spec.ts` (PostgreSQL container, brokers pointing to a closed port): 201 within 5 s; exactly one `PENDING_RETRY` row with `retryCount` 0, `nextRetryAt` and `lastError` set, `eventId` equal to the payload's; a captured log line has topic, key, `eventId` and `aggregateId`; no password or hash in any log. Depends on T025. Commit `test(US-01): cover registration with Kafka unreachable`.
+- [X] T028 [US3] Add `tests/component/register-kafka-unavailable.component.spec.ts` (PostgreSQL container, brokers pointing to a closed port): 201 within 5 s; exactly one `PENDING_RETRY` row with `retryCount` 0, `nextRetryAt` and `lastError` set, `eventId` equal to the payload's; a captured log line has topic, key, `eventId` and `aggregateId`; no password or hash in any log. Depends on T025. Commit `test(US-01): cover registration with Kafka unreachable`.
 
 **Checkpoint**: All three stories work and are covered end to end.
 

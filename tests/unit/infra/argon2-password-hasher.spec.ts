@@ -38,4 +38,48 @@ describe('Argon2PasswordHasher', () => {
   it('should fail fast when the argon2 configuration is missing', () => {
     expect(() => new Argon2PasswordHasher(new ConfigService({}))).toThrow();
   });
+
+  describe('verify', () => {
+    it('should accept the right password', async () => {
+      const encoded = await hasher.hash(password);
+
+      await expect(hasher.verify(password, encoded)).resolves.toBe(true);
+    });
+
+    it('should reject a wrong password', async () => {
+      const encoded = await hasher.hash(password);
+
+      await expect(hasher.verify('another password', encoded)).resolves.toBe(false);
+    });
+
+    it('should not trim the password', async () => {
+      const encoded = await hasher.hash('secret');
+
+      await expect(hasher.verify('secret ', encoded)).resolves.toBe(false);
+    });
+
+    it('should return false for a malformed hash instead of throwing', async () => {
+      await expect(hasher.verify(password, 'not-a-hash')).resolves.toBe(false);
+    });
+  });
+
+  describe('dummyHash', () => {
+    it('should throw before module init', () => {
+      const fresh = new Argon2PasswordHasher(new ConfigService({ argon2 }));
+
+      expect(() => fresh.dummyHash()).toThrow('dummy hash is not ready');
+    });
+
+    it('should be an argon2id hash with the configured parameters that never verifies', async () => {
+      const initialized = new Argon2PasswordHasher(new ConfigService({ argon2 }));
+      await initialized.onModuleInit();
+
+      const dummy = initialized.dummyHash();
+
+      expect(dummy).toMatch(/^\$argon2id\$v=19\$m=1024,t=2,p=1\$/);
+      await expect(initialized.verify(password, dummy)).resolves.toBe(false);
+      await expect(initialized.verify('', dummy)).resolves.toBe(false);
+      expect(initialized.dummyHash()).toBe(dummy);
+    });
+  });
 });

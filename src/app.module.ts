@@ -11,6 +11,7 @@ import { KafkaModule } from './infra/kafka/kafka.module';
 import { AuthController, REGISTER_THROTTLER } from './controllers/auth.controller';
 import { HealthController } from './controllers/health.controller';
 import { HealthService } from './services/health.service';
+import { OutboundDeadLetterRepository } from './repositories/outbound-dead-letter.repository';
 import { UserRepository } from './repositories/user.repository';
 import { Argon2PasswordHasher } from './infra/security/argon2-password-hasher';
 import { PasswordHasher } from './services/ports/password-hasher';
@@ -40,6 +41,7 @@ import { RegisterCustomerService } from './services/register-customer.service';
   providers: [
     HealthService,
     UserRepository,
+    OutboundDeadLetterRepository,
     { provide: PasswordHasher, useClass: Argon2PasswordHasher },
     RegisterCustomerService,
   ],

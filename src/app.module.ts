@@ -26,6 +26,7 @@ import { RefreshTokenGenerator } from './services/ports/refresh-token-generator'
 import { TokenIssuer } from './services/ports/token-issuer';
 import { UserEventPublisher } from './services/ports/user-event-publisher';
 import { UserEventsProducer } from './infra/kafka/user-events.producer';
+import { LoginService } from './services/login.service';
 import { RegisterCustomerService } from './services/register-customer.service';
 
 /**
@@ -81,6 +82,7 @@ function createTokenIssuer(signingKey: SigningKey, configService: ConfigService)
     { provide: Clock, useClass: SystemClock },
     { provide: UserEventPublisher, useClass: UserEventsProducer },
     RegisterCustomerService,
+    LoginService,
   ],
 })
 export class AppModule {}

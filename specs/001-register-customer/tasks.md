@@ -112,7 +112,7 @@ description: "Task list for US-01: Register a customer account"
 ## Phase 6: Polish & Docs
 
 - [X] T029 [P] Update `README.md` (`POST /auth/register` implemented, env table for `ARGON2_*` and `RATE_LIMIT_REGISTER_*`, the 409 enumeration trade-off limited by rate limiting) and `.env.example` (same variables with defaults). Commit `docs(US-01): document registration endpoint and settings`.
-- [ ] T030 [P] Update `src/README.md` with the new `services/ports/` and `infra/security/` folders and the register write flow. Commit `docs(US-01): describe ports and security layout`.
+- [X] T030 [P] Update `src/README.md` with the new `services/ports/` and `infra/security/` folders and the register write flow. Commit `docs(US-01): describe ports and security layout`.
 - [ ] T031 Run `specs/001-register-customer/quickstart.md` scenarios 1–7 against local infra and the final gate; fix anything found (each fix its own commit).
 
 ---

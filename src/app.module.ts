@@ -23,7 +23,8 @@ import { UserRepository } from './repositories/user.repository';
 import { Argon2PasswordHasher } from './infra/security/argon2-password-hasher';
 import { CryptoRefreshTokenGenerator } from './infra/security/crypto-refresh-token-generator';
 import { JoseTokenIssuer } from './infra/security/jose-token-issuer';
-import { loadSigningKey, SigningKey } from './infra/security/signing-key';
+import { KeyRing, loadKeyRing } from './infra/security/key-ring';
+import { SigningKey } from './infra/security/signing-key';
 import { SystemClock } from './infra/time/system-clock';
 import { Clock } from './services/ports/clock';
 import { PasswordHasher } from './services/ports/password-hasher';
@@ -91,10 +92,18 @@ function createTokenIssuer(signingKey: SigningKey, configService: ConfigService)
     RefreshTokenRepository,
     { provide: PasswordHasher, useClass: Argon2PasswordHasher },
     {
-      provide: SigningKey,
+      provide: KeyRing,
       inject: [ConfigService],
-      useFactory: (configService: ConfigService): Promise<SigningKey> =>
-        loadSigningKey(configService.getOrThrow<JwtConfig>('jwt').privateKeyPath),
+      useFactory: (configService: ConfigService): Promise<KeyRing> =>
+        loadKeyRing({
+          activePrivateKeyPath: configService.getOrThrow<JwtConfig>('jwt').privateKeyPath,
+          retiredPublicKeyPaths: [],
+        }),
+    },
+    {
+      provide: SigningKey,
+      inject: [KeyRing],
+      useFactory: (ring: KeyRing): SigningKey => ring.activeKey,
     },
     { provide: TokenIssuer, inject: [SigningKey, ConfigService], useFactory: createTokenIssuer },
     { provide: RefreshTokenGenerator, useClass: CryptoRefreshTokenGenerator },

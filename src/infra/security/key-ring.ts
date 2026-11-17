@@ -1,4 +1,5 @@
 import { createHash, createPrivateKey, createPublicKey, KeyObject } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
 import { calculateJwkThumbprint, exportJWK } from 'jose';
 import { MIN_RSA_MODULUS_BITS, SigningKey, SigningKeyError } from './signing-key';
 
@@ -106,4 +107,46 @@ export async function buildKeyRing(active: KeyFile, retired: readonly KeyFile[])
   const privateKey = parseActivePrivateKey(active);
   const activeJwk = await toPublicJwk(createPublicKey(privateKey));
   return new KeyRing(new LoadedSigningKey(privateKey, activeJwk.kid), [activeJwk]);
+}
+
+/** Where {@link loadKeyRing} reads the keys from. */
+export interface KeyRingPaths {
+  /** Active private key path (`JWT_PRIVATE_KEY_PATH`); unset fails. */
+  activePrivateKeyPath: string | undefined;
+  /** Retired public key paths (`JWT_RETIRED_PUBLIC_KEY_PATHS`), in order. */
+  retiredPublicKeyPaths: readonly string[];
+}
+
+/** Reads a key file, mapping file-system errors to messages that name the path only. */
+async function readKeyFile(path: string, kind: string): Promise<KeyFile> {
+  try {
+    return { path, pem: await readFile(path, 'utf8') };
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === 'ENOENT') {
+      throw new SigningKeyError(`${kind} file not found: ${path}`);
+    }
+    throw new SigningKeyError(`${kind} file is not readable: ${path} (${code ?? 'error'})`);
+  }
+}
+
+/**
+ * Reads the key files and builds the key ring. Called once at startup; any failure stops the app.
+ *
+ * @param paths The active private key path and the retired public key paths.
+ * @returns The key ring.
+ * @throws SigningKeyError When the active path is unset, a file is missing or unreadable, or a key
+ * is unusable. Messages name the file or variable, never the key content.
+ */
+export async function loadKeyRing(paths: KeyRingPaths): Promise<KeyRing> {
+  const { activePrivateKeyPath, retiredPublicKeyPaths } = paths;
+  if (activePrivateKeyPath === undefined || activePrivateKeyPath.trim() === '') {
+    throw new SigningKeyError('JWT_PRIVATE_KEY_PATH is not set');
+  }
+  const active = await readKeyFile(activePrivateKeyPath, 'signing key');
+  const retired: KeyFile[] = [];
+  for (const path of retiredPublicKeyPaths) {
+    retired.push(await readKeyFile(path, 'retired public key'));
+  }
+  return buildKeyRing(active, retired);
 }

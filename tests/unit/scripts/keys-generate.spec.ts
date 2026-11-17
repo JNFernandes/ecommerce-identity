@@ -2,7 +2,13 @@ import { mkdtempSync, readFileSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { generateKeys } from '../../../scripts/keys-generate';
-import { loadSigningKey } from '../../../src/infra/security/signing-key';
+import { loadKeyRing } from '../../../src/infra/security/key-ring';
+import { SigningKey } from '../../../src/infra/security/signing-key';
+
+/** Loads a private key file the way the service does at startup. */
+async function loadSigningKey(path: string): Promise<SigningKey> {
+  return (await loadKeyRing({ activePrivateKeyPath: path, retiredPublicKeyPaths: [] })).activeKey;
+}
 
 /** A new empty temp directory. */
 function tempDir(): string {

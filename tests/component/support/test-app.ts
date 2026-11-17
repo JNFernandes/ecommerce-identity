@@ -1,6 +1,10 @@
 import { INestApplication, LoggerService } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
+import { generateKeyPairSync, KeyObject } from 'crypto';
+import { mkdtempSync, writeFileSync } from 'fs';
 import { AddressInfo, createServer } from 'net';
+import { tmpdir } from 'os';
+import { join } from 'path';
 import { PostgreSqlContainer, StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import { AppModule } from '../../../src/app.module';
 import { configureApp } from '../../../src/app.setup';
@@ -14,9 +18,31 @@ export async function closedPort(): Promise<number> {
   return port;
 }
 
+/** `iss` used by component tests. */
+export const TEST_JWT_ISSUER = 'ecommerce-identity-test';
+
+/** `aud` used by component tests. */
+export const TEST_JWT_AUDIENCE = 'ecommerce-test';
+
+/**
+ * Generates a 2048-bit RSA key pair in memory, writes the PKCS#8 private key to a temp file and
+ * points `JWT_PRIVATE_KEY_PATH`, `JWT_ISSUER` and `JWT_AUDIENCE` at test values. Returns the public
+ * key so tests can verify issued tokens. Each call replaces the previous key.
+ */
+export function useTestSigningKey(): KeyObject {
+  const { privateKey, publicKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
+  const path = join(mkdtempSync(join(tmpdir(), 'identity-test-key-')), 'private.pem');
+  writeFileSync(path, privateKey.export({ type: 'pkcs8', format: 'pem' }), { mode: 0o600 });
+  process.env.JWT_PRIVATE_KEY_PATH = path;
+  process.env.JWT_ISSUER = TEST_JWT_ISSUER;
+  process.env.JWT_AUDIENCE = TEST_JWT_AUDIENCE;
+  return publicKey;
+}
+
 /**
  * Starts a PostgreSQL container and points the app's `DATABASE_*` settings at it (migrations run
- * on startup). Also sets low argon2 parameters so registrations stay fast.
+ * on startup). Also sets low argon2 parameters so registrations stay fast, and a temporary signing
+ * key (see {@link useTestSigningKey}).
  */
 export async function startPostgres(): Promise<StartedPostgreSqlContainer> {
   const container = await new PostgreSqlContainer('postgres:16-alpine').start();
@@ -29,6 +55,7 @@ export async function startPostgres(): Promise<StartedPostgreSqlContainer> {
   process.env.ARGON2_MEMORY_COST_KIB = '1024';
   process.env.ARGON2_TIME_COST = '2';
   process.env.ARGON2_PARALLELISM = '1';
+  useTestSigningKey();
   return container;
 }
 

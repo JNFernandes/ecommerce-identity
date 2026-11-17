@@ -1,25 +1,16 @@
 import { INestApplication } from '@nestjs/common';
-import { Test } from '@nestjs/testing';
 import { DataSource } from 'typeorm';
-import { AddressInfo, createServer } from 'net';
 import request from 'supertest';
-import { PostgreSqlContainer, StartedPostgreSqlContainer } from '@testcontainers/postgresql';
-import { AppModule } from '../../src/app.module';
-import { configureApp } from '../../src/app.setup';
+import { KafkaContainer, StartedKafkaContainer } from '@testcontainers/kafka';
+import { StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import { CapturingLogger } from './support/capturing-logger';
+import { TopicObserver } from './support/kafka-testing';
+import { createTestApp, startPostgres } from './support/test-app';
 
-jest.setTimeout(180_000);
+jest.setTimeout(240_000);
 
 const PASSWORD = 'correct-horse-battery';
-
-/** Returns a local port with nothing listening on it, so Kafka is unreachable. */
-async function closedPort(): Promise<number> {
-  const server = createServer();
-  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
-  const { port } = server.address() as AddressInfo;
-  await new Promise<void>((resolve) => server.close(() => resolve()));
-  return port;
-}
+const TOPIC = 'identity.user-registered';
 
 interface UserRow {
   id: string;
@@ -34,29 +25,23 @@ interface UserRow {
 describe('POST /auth/register (component)', () => {
   const savedEnv = { ...process.env };
   const logger = new CapturingLogger();
-  let container: StartedPostgreSqlContainer;
+  let postgres: StartedPostgreSqlContainer;
+  let kafka: StartedKafkaContainer;
+  let observer: TopicObserver;
   let app: INestApplication;
   let response: request.Response;
   let row: UserRow;
 
   beforeAll(async () => {
-    container = await new PostgreSqlContainer('postgres:16-alpine').start();
-    process.env.DATABASE_HOST = container.getHost();
-    process.env.DATABASE_PORT = String(container.getPort());
-    process.env.DATABASE_NAME = container.getDatabase();
-    process.env.DATABASE_USER = container.getUsername();
-    process.env.DATABASE_PASSWORD = container.getPassword();
-    process.env.DATABASE_MIGRATIONS_RUN = 'true';
-    process.env.KAFKA_BROKERS = `127.0.0.1:${await closedPort()}`;
-    process.env.ARGON2_MEMORY_COST_KIB = '1024';
-    process.env.ARGON2_TIME_COST = '2';
-    process.env.ARGON2_PARALLELISM = '1';
+    [postgres, kafka] = await Promise.all([
+      startPostgres(),
+      new KafkaContainer('confluentinc/cp-kafka:7.6.1').start(),
+    ]);
+    const broker = `${kafka.getHost()}:${kafka.getMappedPort(9093)}`;
+    process.env.KAFKA_BROKERS = broker;
+    observer = await TopicObserver.start(broker, TOPIC);
 
-    const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
-    moduleRef.useLogger(logger);
-    app = moduleRef.createNestApplication();
-    configureApp(app);
-    await app.init();
+    app = await createTestApp(logger);
 
     response = await request(app.getHttpServer())
       .post('/auth/register')
@@ -67,11 +52,13 @@ describe('POST /auth/register (component)', () => {
         'SELECT "id", "customerId", "email", "name", "passwordHash", "roles"::text AS "roles", "status" FROM "users"',
       );
     row = rows[0];
+    await observer.waitForMessages(1);
   });
 
   afterAll(async () => {
+    await observer?.stop();
     await app?.close();
-    await container?.stop();
+    await Promise.all([kafka?.stop(), postgres?.stop()]);
     process.env = savedEnv;
   });
 
@@ -106,6 +93,33 @@ describe('POST /auth/register (component)', () => {
     }
     expect(body).not.toContain(PASSWORD);
     expect(body).not.toContain(row.passwordHash);
+  });
+
+  it('should publish exactly one identity.user-registered keyed by the user id', () => {
+    expect(observer.messages).toHaveLength(1);
+    const [message] = observer.messages;
+    expect(message.key).toBe(response.body.id);
+    expect(Object.keys(message.value).sort()).toEqual(
+      ['aggregateId', 'customerId', 'email', 'eventId', 'name', 'occurredAt', 'version'].sort(),
+    );
+    expect(message.value).toMatchObject({
+      aggregateId: response.body.id,
+      customerId: response.body.customerId,
+      email: 'ana@example.com',
+      name: 'Ana',
+      version: 1,
+    });
+    expect(message.value.eventId).toEqual(expect.stringMatching(/^[0-9a-f-]{36}$/));
+    expect(new Date(message.value.occurredAt as string).toISOString()).toBe(
+      message.value.occurredAt,
+    );
+  });
+
+  it('should write no dead letter', async () => {
+    const rows: unknown[] = await app
+      .get(DataSource)
+      .query('SELECT 1 FROM "outbound_dead_letters"');
+    expect(rows).toHaveLength(0);
   });
 
   it('should log neither the password nor the hash', () => {

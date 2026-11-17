@@ -2,10 +2,12 @@ import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { LoginCommand } from '../../../src/commands/login.command';
 import { Email } from '../../../src/domain/email.value-object';
+import { InvalidCredentialsError } from '../../../src/domain/errors/invalid-credentials.error';
 import { RefreshToken } from '../../../src/domain/refresh-token.aggregate';
 import { Role } from '../../../src/domain/role.enum';
 import { User } from '../../../src/domain/user.aggregate';
 import { UserName } from '../../../src/domain/user-name.value-object';
+import { UserStatus } from '../../../src/domain/user-status.enum';
 import { RefreshTokenRepository } from '../../../src/repositories/refresh-token.repository';
 import { UserRepository } from '../../../src/repositories/user.repository';
 import { LoginService } from '../../../src/services/login.service';
@@ -37,6 +39,7 @@ describe('LoginService', () => {
   let issue: jest.Mock<Promise<IssuedAccessToken>, [AccessTokenSubject, Date]>;
   let generate: jest.Mock<GeneratedRefreshToken, []>;
   let log: jest.SpyInstance;
+  let warn: jest.SpyInstance;
   let service: LoginService;
 
   const command = (email = ' Ana@Example.com ', password = PASSWORD): LoginCommand =>
@@ -57,6 +60,7 @@ describe('LoginService', () => {
       .mockResolvedValue(ACCESS);
     generate = jest.fn<GeneratedRefreshToken, []>().mockReturnValue(REFRESH);
     log = jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
+    warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
     service = new LoginService(
       { findByEmail } as unknown as UserRepository,
       { saveWithLogin } as unknown as RefreshTokenRepository,
@@ -121,5 +125,105 @@ describe('LoginService', () => {
     expect(logged).not.toContain(REFRESH.value);
     expect(logged).not.toContain(ACCESS.token);
     expect(logged).not.toContain('ana@example.com');
+  });
+
+  describe('failures', () => {
+    /** A stored user with the given status. */
+    function storedUser(status: UserStatus): User {
+      return User.restore({
+        id: user.id,
+        customerId: user.customerId,
+        email: user.email,
+        name: user.name,
+        passwordHash: USER_HASH,
+        roles: user.roles,
+        status,
+        createdAt: user.createdAt,
+        updatedAt: user.updatedAt,
+        lastLoginAt: null,
+      });
+    }
+
+    /** Asserts nothing was issued or stored. */
+    function expectNothingIssued(): void {
+      expect(issue).not.toHaveBeenCalled();
+      expect(generate).not.toHaveBeenCalled();
+      expect(saveWithLogin).not.toHaveBeenCalled();
+    }
+
+    it('should verify once against the dummy hash for an unknown email', async () => {
+      findByEmail.mockResolvedValue(null);
+      verify.mockResolvedValue(false);
+
+      await expect(service.execute(command())).rejects.toBeInstanceOf(InvalidCredentialsError);
+
+      expect(verify).toHaveBeenCalledTimes(1);
+      expect(verify).toHaveBeenCalledWith(PASSWORD, DUMMY_HASH);
+      expectNothingIssued();
+      expect(warn).toHaveBeenCalledWith('login failed: reason=unknown_email ip=203.0.113.7');
+    });
+
+    it('should refuse a wrong password after one verification', async () => {
+      verify.mockResolvedValue(false);
+
+      await expect(service.execute(command())).rejects.toBeInstanceOf(InvalidCredentialsError);
+
+      expect(verify).toHaveBeenCalledTimes(1);
+      expect(verify).toHaveBeenCalledWith(PASSWORD, USER_HASH);
+      expect(dummyHash).not.toHaveBeenCalled();
+      expectNothingIssued();
+      expect(warn).toHaveBeenCalledWith(
+        `login failed: reason=wrong_password userId=${user.id} ip=203.0.113.7`,
+      );
+    });
+
+    it('should refuse a disabled user after one verification, even with the right password', async () => {
+      const disabled = storedUser(UserStatus.DISABLED);
+      findByEmail.mockResolvedValue(disabled);
+
+      await expect(service.execute(command())).rejects.toBeInstanceOf(InvalidCredentialsError);
+
+      expect(verify).toHaveBeenCalledTimes(1);
+      expect(disabled.lastLoginAt).toBeNull();
+      expectNothingIssued();
+      expect(warn).toHaveBeenCalledWith(
+        `login failed: reason=inactive userId=${user.id} ip=203.0.113.7`,
+      );
+    });
+
+    it('should raise the same error for every failure', async () => {
+      const errors: unknown[] = [];
+      findByEmail.mockResolvedValueOnce(null);
+      verify.mockResolvedValueOnce(false);
+      errors.push(await service.execute(command()).catch((caught: unknown) => caught));
+      verify.mockResolvedValueOnce(false);
+      errors.push(await service.execute(command()).catch((caught: unknown) => caught));
+      findByEmail.mockResolvedValueOnce(storedUser(UserStatus.DISABLED));
+      errors.push(await service.execute(command()).catch((caught: unknown) => caught));
+
+      for (const error of errors) {
+        expect(error).toBeInstanceOf(InvalidCredentialsError);
+        expect((error as Error).message).toBe('invalid credentials');
+      }
+    });
+
+    it('should never log the email, password or hash on failure', async () => {
+      verify.mockResolvedValue(false);
+
+      await service.execute(command()).catch(() => undefined);
+
+      const logged = JSON.stringify(warn.mock.calls);
+      expect(logged).not.toContain('ana@example.com');
+      expect(logged).not.toContain(PASSWORD);
+      expect(logged).not.toContain(USER_HASH);
+    });
+
+    it('should propagate a repository error unchanged', async () => {
+      const failure = new Error('database down');
+      findByEmail.mockRejectedValue(failure);
+
+      await expect(service.execute(command())).rejects.toBe(failure);
+      expect(verify).not.toHaveBeenCalled();
+    });
   });
 });

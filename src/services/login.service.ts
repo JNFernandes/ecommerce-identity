@@ -13,6 +13,9 @@ import { PasswordHasher } from './ports/password-hasher';
 import { RefreshTokenGenerator } from './ports/refresh-token-generator';
 import { TokenIssuer } from './ports/token-issuer';
 
+/** Why a login failed. Logged only; the client always gets the same error. */
+type LoginFailureReason = 'unknown_email' | 'wrong_password' | 'inactive';
+
 /** Result of a successful login. Both tokens are secrets: never log them. */
 export interface LoginResult {
   /** Signed RS256 access token. */
@@ -28,6 +31,10 @@ export interface LoginResult {
 /**
  * Handles `LoginCommand`: checks the credentials, records the login and issues an access token
  * and a refresh token. Orchestration only; the login rules live in the domain.
+ *
+ * Every attempt runs exactly one password verification (against a dummy hash for an unknown
+ * email), and every failure raises the same `InvalidCredentialsError`, so neither the response
+ * nor its timing reveals whether an account exists or is disabled.
  */
 @CommandHandler(LoginCommand)
 export class LoginService implements ICommandHandler<LoginCommand, LoginResult> {
@@ -66,8 +73,19 @@ export class LoginService implements ICommandHandler<LoginCommand, LoginResult> 
   async execute(command: LoginCommand): Promise<LoginResult> {
     const email = Email.create(command.email);
     const user = await this.userRepository.findByEmail(email.value);
-    if (user === null || !(await this.passwordHasher.verify(command.password, user.passwordHash))) {
-      throw new InvalidCredentialsError();
+    // Exactly one verification whatever the outcome, so every failure costs the same.
+    const passwordMatches = await this.passwordHasher.verify(
+      command.password,
+      user?.passwordHash ?? this.passwordHasher.dummyHash(),
+    );
+    if (user === null) {
+      throw this.refuse('unknown_email', command.clientIp);
+    }
+    if (!passwordMatches) {
+      throw this.refuse('wrong_password', command.clientIp, user.id);
+    }
+    if (!user.canLogin()) {
+      throw this.refuse('inactive', command.clientIp, user.id);
     }
 
     const now = this.clock.now();
@@ -92,5 +110,19 @@ export class LoginService implements ICommandHandler<LoginCommand, LoginResult> 
       tokenType: 'Bearer',
       expiresIn: access.expiresIn,
     };
+  }
+
+  /**
+   * Logs a failed login (reason, user id when known, IP; never the email, password, hash or a
+   * token) and returns the single generic error.
+   */
+  private refuse(
+    reason: LoginFailureReason,
+    clientIp: string | undefined,
+    userId?: string,
+  ): InvalidCredentialsError {
+    const user = userId === undefined ? '' : ` userId=${userId}`;
+    this.logger.warn(`login failed: reason=${reason}${user} ip=${clientIp ?? 'unknown'}`);
+    return new InvalidCredentialsError();
   }
 }

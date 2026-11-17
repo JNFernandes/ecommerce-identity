@@ -35,6 +35,33 @@ describe('loadKeyRing (integration, real files)', () => {
     expect(ring.keys.map((key) => key.kid)).toEqual([kid]);
   });
 
+  it('should publish the active key then two retired keys in configured order', async () => {
+    const dir = tempDir();
+    const retiredA = generateKeyPairSync('rsa', { modulusLength: 2048 });
+    const retiredB = generateKeyPairSync('rsa', { modulusLength: 2048 });
+    const activePath = join(dir, 'active-private.pem');
+    const pathA = join(dir, 'a-public.pem');
+    const pathB = join(dir, 'b-public.pem');
+    writeFileSync(activePath, rsa.privateKey.export({ type: 'pkcs8', format: 'pem' }));
+    writeFileSync(pathA, retiredA.publicKey.export({ type: 'spki', format: 'pem' }));
+    writeFileSync(pathB, retiredB.publicKey.export({ type: 'pkcs1', format: 'pem' }));
+
+    const ring = await loadKeyRing({
+      activePrivateKeyPath: activePath,
+      retiredPublicKeyPaths: [pathB, pathA],
+    });
+
+    const kidOf = async (key: typeof rsa.publicKey): Promise<string> =>
+      calculateJwkThumbprint(await exportJWK(key), 'sha256');
+    const activeKid = await kidOf(rsa.publicKey);
+    expect(ring.activeKey.kid).toBe(activeKid);
+    expect(ring.keys.map((key) => key.kid)).toEqual([
+      activeKid,
+      await kidOf(retiredB.publicKey),
+      await kidOf(retiredA.publicKey),
+    ]);
+  });
+
   it('should fail when the active path is unset or blank', async () => {
     expect((await failureFor(undefined)).message).toBe('JWT_PRIVATE_KEY_PATH is not set');
     expect((await failureFor('  ')).message).toBe('JWT_PRIVATE_KEY_PATH is not set');

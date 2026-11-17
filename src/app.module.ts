@@ -114,11 +114,13 @@ function createJwksService(publicKeySet: PublicKeySet, configService: ConfigServ
     {
       provide: KeyRing,
       inject: [ConfigService],
-      useFactory: (configService: ConfigService): Promise<KeyRing> =>
-        loadKeyRing({
-          activePrivateKeyPath: configService.getOrThrow<JwtConfig>('jwt').privateKeyPath,
-          retiredPublicKeyPaths: [],
-        }),
+      useFactory: (configService: ConfigService): Promise<KeyRing> => {
+        const jwt = configService.getOrThrow<JwtConfig>('jwt');
+        return loadKeyRing({
+          activePrivateKeyPath: jwt.privateKeyPath,
+          retiredPublicKeyPaths: jwt.retiredPublicKeyPaths,
+        });
+      },
     },
     {
       provide: SigningKey,

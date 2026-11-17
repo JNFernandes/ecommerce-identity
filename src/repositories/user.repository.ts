@@ -73,6 +73,7 @@ export class UserRepository {
       status: entity.status,
       createdAt: entity.createdAt,
       updatedAt: entity.updatedAt,
+      lastLoginAt: null,
     });
   }
 }

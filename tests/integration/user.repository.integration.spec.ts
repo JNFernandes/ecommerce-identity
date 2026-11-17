@@ -81,6 +81,7 @@ describe('UserRepository (integration)', () => {
       status: fresh.status,
       createdAt: fresh.createdAt,
       updatedAt: fresh.updatedAt,
+      lastLoginAt: fresh.lastLoginAt,
     });
 
     await expect(repository.save(upperCase)).rejects.toBeInstanceOf(DuplicateEmailError);

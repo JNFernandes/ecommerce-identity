@@ -45,7 +45,7 @@ description: "Task list for US-01: Register a customer account"
 ### Password hasher
 
 - [X] T008 [P] Add `PasswordHasher` abstract class (`hash(plain): Promise<string>`, JSDoc) in `src/services/ports/password-hasher.ts`, and an `argon2` section (`ARGON2_MEMORY_COST_KIB` 65536, `ARGON2_TIME_COST` 3, `ARGON2_PARALLELISM` 4) in `src/config/configuration.ts`. Extend `tests/unit/config/configuration.spec.ts` (defaults and overrides). Commit `feat(US-01): add password hasher port and argon2 config`.
-- [ ] T009 Implement `Argon2PasswordHasher` (`type: argon2id`, parameters from config, never logs input or output) in `src/infra/security/argon2-password-hasher.ts` (depends on T008). Tests in `tests/unit/infra/argon2-password-hasher.spec.ts` with low parameters: hash starts with `$argon2id$`, encodes the configured `m`/`t`/`p`, `argon2.verify` succeeds, two hashes of one password differ. Commit `feat(US-01): add argon2id password hasher`.
+- [X] T009 Implement `Argon2PasswordHasher` (`type: argon2id`, parameters from config, never logs input or output) in `src/infra/security/argon2-password-hasher.ts` (depends on T008). Tests in `tests/unit/infra/argon2-password-hasher.spec.ts` with low parameters: hash starts with `$argon2id$`, encodes the configured `m`/`t`/`p`, `argon2.verify` succeeds, two hashes of one password differ. Commit `feat(US-01): add argon2id password hasher`.
 
 ### Migration and repository
 

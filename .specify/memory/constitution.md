@@ -1,50 +1,385 @@
-# [PROJECT_NAME] Constitution
-<!-- Example: Spec Constitution, TaskFlow Constitution, etc. -->
+<!--
+SYNC IMPACT REPORT
+==================
+Version change:    (template) → 1.0.0
+Bump rationale:    Initial ratification. The placeholder template is replaced by a full
+                   constitution modelled on ecommerce-orders v1.2.0 (structure, wording, section
+                   order) with the producer failure handling and startup resilience wording of
+                   ecommerce-inventory v1.1.2, adapted to an identity service.
+
+Modified principles (template placeholder → new title):
+  - [PRINCIPLE_1_NAME] → I. Domain-Driven Design & Layered Architecture
+  - [PRINCIPLE_2_NAME] → II. Security First (NON-NEGOTIABLE)
+  - [PRINCIPLE_3_NAME] → III. Authorization & Roles (NON-NEGOTIABLE)
+  - [PRINCIPLE_4_NAME] → IV. Write Flow Integrity (NON-NEGOTIABLE)
+  - [PRINCIPLE_5_NAME] → V. Type Safety & Input Validation
+
+Added sections:
+  - Principles VI. Test Coverage, VII. Testing Strategy, VIII. Kafka Events (Producer),
+    IX. Branching Strategy, X. Build & Code Quality Integrity (NON-NEGOTIABLE)
+  - Technology Stack (was [SECTION_2_NAME])
+  - Out of Scope
+  - Documentation Standards (was [SECTION_3_NAME])
+  - Governance (filled)
+
+Removed sections:
+  - (none)
+
+Templates reviewed:
+  ✅ .specify/templates/plan-template.md  — Constitution Check gates derive from this file at runtime; no static change needed.
+  ✅ .specify/templates/spec-template.md  — Generic structure; no mandatory section added or removed.
+  ✅ .specify/templates/tasks-template.md — Phase/story structure compatible; security tests fit existing test tasks.
+  ✅ .specify/templates/commands/*.md     — Directory not present in this project; nothing to update.
+
+Runtime guidance:
+  ⚠ README.md — not present yet. MUST be created with the first story and MUST state that HTTPS
+    is required outside local development and document the development key pair script.
+  ⚠ CLAUDE.md — not present yet; create it aligned with this version.
+  ⚠ docs/adr/ — not present yet; create the index and template with the first ADR.
+
+Cross-repository follow-ups (ecommerce-infra):
+  ⚠ docs/events.md — add topic `identity.user-registered` (published by Identity, status
+    planned) with its payload (`customerId`, `email`, `name`).
+  ⚠ docker-compose.yml — add the `identity` PostgreSQL database on localhost:5435
+    (`identity_user` / `identity_pass`) and the `identity.user-registered` topic in `kafka-init`.
+
+Deferred TODOs:
+  (none)
+-->
+
+# ecommerce-identity Constitution
 
 ## Core Principles
 
-### [PRINCIPLE_1_NAME]
-<!-- Example: I. Library-First -->
-[PRINCIPLE_1_DESCRIPTION]
-<!-- Example: Every feature starts as a standalone library; Libraries must be self-contained, independently testable, documented; Clear purpose required - no organizational-only libraries -->
+### I. Domain-Driven Design & Layered Architecture
 
-### [PRINCIPLE_2_NAME]
-<!-- Example: II. CLI Interface -->
-[PRINCIPLE_2_DESCRIPTION]
-<!-- Example: Every library exposes functionality via CLI; Text in/out protocol: stdin/args → stdout, errors → stderr; Support JSON + human-readable formats -->
+The codebase MUST follow a strict four-layer model: **Controller → Service → Domain → Repository**.
 
-### [PRINCIPLE_3_NAME]
-<!-- Example: III. Test-First (NON-NEGOTIABLE) -->
-[PRINCIPLE_3_DESCRIPTION]
-<!-- Example: TDD mandatory: Tests written → User approved → Tests fail → Then implement; Red-Green-Refactor cycle strictly enforced -->
+- **Controllers** handle HTTP I/O only — routing, deserialization, and response shaping. No logic.
+- **Services** orchestrate workflows and coordinate domain objects and repositories. They MUST NOT contain business rules.
+- **Domain** is the sole home of all business logic. Entities, value objects, aggregates, and domain events live here.
+- **Repositories** abstract persistence. They MUST NOT leak ORM internals into domain objects.
+  TypeORM entities are separate classes from domain objects and are mapped explicitly in the
+  infrastructure layer.
 
-### [PRINCIPLE_4_NAME]
-<!-- Example: IV. Integration Testing -->
-[PRINCIPLE_4_DESCRIPTION]
-<!-- Example: Focus areas requiring integration tests: New library contract tests, Contract changes, Inter-service communication, Shared schemas -->
+Aggregates:
+- `User` — `id`, `customerId`, `email`, `name`, `passwordHash`, `roles`, `status`, timestamps
+  (`createdAt`, `updatedAt`).
+- `RefreshToken` — `id`, `userId`, `familyId`, `tokenHash`, `expiresAt`, `revokedAt`,
+  `replacedBy`.
 
-### [PRINCIPLE_5_NAME]
-<!-- Example: V. Observability, VI. Versioning & Breaking Changes, VII. Simplicity -->
-[PRINCIPLE_5_DESCRIPTION]
-<!-- Example: Text I/O ensures debuggability; Structured logging required; Or: MAJOR.MINOR.BUILD format; Or: Start simple, YAGNI principles -->
+The domain event `UserRegistered` is raised by the domain and published by infrastructure.
+Placing business logic in controllers or services is a constitutional violation and MUST be rejected in code review.
 
-## [SECTION_2_NAME]
-<!-- Example: Additional Constraints, Security Requirements, Performance Standards, etc. -->
+### II. Security First (NON-NEGOTIABLE)
 
-[SECTION_2_CONTENT]
-<!-- Example: Technology stack requirements, compliance standards, deployment policies, etc. -->
+This service owns credentials and issues the tokens every other service trusts. Every rule below
+is mandatory.
 
-## [SECTION_3_NAME]
-<!-- Example: Development Workflow, Review Process, Quality Gates, etc. -->
+**Passwords:**
+- Passwords MUST be hashed with **argon2id**; its parameters (memory, iterations, parallelism)
+  MUST be configurable.
+- A password MUST NEVER be logged, returned in any response, or stored in clear text.
 
-[SECTION_3_CONTENT]
-<!-- Example: Code review requirements, testing gates, deployment approval process, etc. -->
+**Login:**
+- Every login failure (unknown email, wrong password, disabled user) MUST return one and the same
+  generic error, so that the response never reveals whether an email exists (no user
+  enumeration).
+- Password checks MUST use constant-time comparison. When the email is unknown, the service MUST
+  still perform a hash verification against a dummy hash so that the response time does not
+  reveal whether the user exists.
+
+**Access tokens:**
+- Access tokens are JWTs signed with **RS256**. They MUST be short-lived: 15 minutes by default,
+  configurable.
+- Claims MUST be exactly: `sub` (user id), `customerId` (customers only), `roles`, `iss`, `aud`,
+  `iat`, `exp`, `jti`. The JWT header MUST carry `kid`.
+- The private key MUST come from the environment or a mounted file and MUST NEVER be committed.
+  A development key pair is generated by a documented script and its output is git-ignored.
+- `GET /.well-known/jwks.json` MUST publish the public keys with their `kid` and MUST support
+  more than one active key at a time so keys can be rotated without invalidating live tokens.
+
+**Refresh tokens:**
+- Refresh tokens are opaque random values with **at least 256 bits of entropy**. They MUST be
+  stored only as a hash, never in clear.
+- A refresh token is single use: every refresh MUST revoke the presented token and issue a new
+  one in the same family (rotation).
+- Presenting a refresh token that has already been used MUST revoke the whole token family
+  (reuse detection) and fail the request.
+- Refresh token lifetime MUST be configurable.
+
+**Request handling:**
+- `POST /auth/register` and `POST /auth/login` MUST be rate limited; exceeding the limit returns
+  `429`.
+- Tokens, passwords and `Authorization` headers MUST NOT appear in logs.
+- Every input MUST be validated (Principle V).
+- CORS allowed origins MUST come only from the `CORS_ALLOWED_ORIGINS` environment variable.
+  Wildcards and hard-coded origins are prohibited.
+- The README MUST state that HTTPS is required outside local development.
+
+### III. Authorization & Roles (NON-NEGOTIABLE)
+
+**Roles:**
+- There are exactly two roles, stored as the `Role` enum: `CUSTOMER` and `ADMIN`.
+- Public registration MUST always create a `CUSTOMER` with a new `customerId`.
+- `ADMIN` users MUST be created only by a startup seed from the `ADMIN_EMAIL` and
+  `ADMIN_PASSWORD` environment variables when no admin exists — never through the API. Admins
+  have no `customerId`.
+- No endpoint may change a user's role.
+
+**Tokens and current state:**
+- Access tokens carry `roles` and, for customers, `customerId`.
+- Role changes and user disabling take effect for access tokens only when those tokens expire.
+  Login and refresh MUST check the user's current `status` and `roles` and MUST refuse a
+  disabled user.
+
+**Endpoint protection:**
+- Endpoints are protected by guards driven by the `roles` claim of a verified access token.
+- Every non-public endpoint MUST declare the roles allowed. An endpoint without a declaration
+  is a constitutional violation.
+
+| Endpoint | Access |
+|----------|--------|
+| `POST /auth/register` | public |
+| `POST /auth/login` | public |
+| `POST /auth/refresh` | public (refresh token required) |
+| `POST /auth/logout` | public (refresh token required) |
+| `GET /.well-known/jwks.json` | public |
+| `GET /users/me` | `CUSTOMER`, `ADMIN` |
+| `GET /users` | `ADMIN` |
+| `PATCH /users/{id}/status` | `ADMIN` |
+
+**Rules for services that verify tokens (platform-wide):**
+- They MUST verify the signature against the JWKS, and `iss`, `aud` and `exp`.
+- They MUST take `customerId` from the verified token and MUST NOT trust a `customerId` sent by
+  the client.
+- A customer asking for a resource owned by someone else MUST get `404`.
+
+### IV. Write Flow Integrity (NON-NEGOTIABLE)
+
+The write flow MUST follow this exact sequence and MUST NOT deviate:
+
+1. Controller receives and validates request (via DTO).
+2. Service delegates to the Domain layer.
+3. Domain executes business logic and raises domain events.
+4. Repository persists state to **PostgreSQL first**.
+5. **Only after** a successful commit: publish `identity.user-registered`.
+
+Publishing to Kafka before a committed database save is a critical violation. If the DB save fails, no Kafka message MUST be emitted. Services are responsible for enforcing this order. `UserStatus` transitions are only final once persisted.
+
+Refresh token rotation MUST be atomic: revoking the presented token and storing its replacement
+happen in a single transaction, and two concurrent refreshes with the same token MUST NOT both
+succeed.
+
+### V. Type Safety & Input Validation
+
+All code MUST be strictly typed — the `any` TypeScript type is **banned** without exception.
+
+- Every external input boundary (REST body, query params, path params) MUST be represented as a DTO class decorated with `class-validator` and `class-transformer`.
+- DTOs are validation contracts. Skipping validation on any input boundary is a constitutional violation.
+- Domain objects MUST use TypeScript types and interfaces — no implicit `any`, no type assertions that widen to `unknown` or `any`.
+- The `Role` and `UserStatus` enums MUST be used for all role and status fields — bare string literals are prohibited.
+
+All errors MUST use NestJS built-in exceptions (NotFoundException, BadRequestException, UnauthorizedException, etc.).
+Domain errors MUST be mapped to HTTP status codes at the controller layer, never in the domain.
+Unhandled promise rejections MUST be caught — no swallowed errors, no silent failures.
+
+### VI. Test Coverage
+
+All domain logic and services MUST have unit tests.
+
+- Every service method and Domain method MUST have at least one unit test covering the happy path and at least one covering an error/edge case.
+- Domain tests MUST NOT depend on NestJS DI, databases, or Kafka — pure unit tests only.
+- Service tests MAY use lightweight mocks for repositories and the event publisher.
+- Each of the following security-critical behaviours MUST have its own tests: password hashing,
+  access token claims and expiry, refresh token rotation, reuse detection, the generic login
+  error, rate limiting, and role guards.
+- Tests are not optional: a PR that adds a service or domain method without corresponding tests MUST NOT be merged.
+
+### VII. Testing Strategy
+
+Three test layers are required:
+
+- **Unit tests** — domain logic and services in isolation. No NestJS, no DB, no Kafka.
+- **Integration tests** — REST endpoints and repositories. Real PostgreSQL via testcontainers. Test happy path, errors, and edge cases.
+- **Component tests** — full NestJS app with real PostgreSQL and real Kafka via testcontainers. Tests the complete write flow (REST → DB → Kafka emitted) and the token flows (register → login → refresh → logout).
+
+Tools: Jest, Supertest, @nestjs/testing, testcontainers (PostgreSQL, Kafka).
+Minimum coverage: 80% on domain and application layers.
+Test names MUST describe the behaviour: "should revoke the whole token family when a used refresh token is presented".
+
+### VIII. Kafka Events (Producer)
+
+Kafka is the event bus between services. This service only **produces** events.
+`ecommerce-infra/docs/events.md` is the source of truth for every topic and payload.
+
+**Produced topics:**
+- `identity.user-registered`
+
+**Event publishing rules:**
+- Events MUST only be published after a committed PostgreSQL save (see Principle IV).
+- Each domain event maps to exactly one Kafka topic.
+
+**Event payload rules:**
+- Every event MUST include: `eventId` (UUID), `occurredAt` (ISO timestamp), `aggregateId` (UUID of
+  the producing aggregate), and `version` (integer).
+- For `identity.*` events, `aggregateId` is the **user id**.
+- `identity.user-registered` additionally carries `customerId`, `email` and `name`.
+- The Kafka message key MUST be the event's `aggregateId`.
+- Payloads MUST be serialized as JSON.
+- Breaking changes to a payload schema require a new topic version (e.g. `identity.user-registered.v2`).
+- Event classes MUST be documented with JSDoc describing every field and MUST match
+  `ecommerce-infra/docs/events.md`.
+
+**Producer failure handling:**
+- If publishing fails after the DB commit, the error MUST be logged with full context (topic,
+  key, `eventId`, `aggregateId`, cause) and the event MUST be stored in an outbound dead-letter
+  table with `status`, `retryCount`, `nextRetryAt` and the last error.
+- A scheduled retry worker MUST claim due rows with `SELECT … FOR UPDATE SKIP LOCKED`, republish
+  with the **same** `eventId`, back off exponentially, and mark each row `RESOLVED` or `EXHAUSTED`.
+- Delivery is **at-least-once**; consumers downstream rely on `eventId` for deduplication.
+- The service MUST NOT throw a 500 to the client for Kafka publish failures — the DB save already succeeded.
+
+**Startup resilience:**
+- The service MUST start and report healthy when Kafka is unreachable: no broker connection is
+  required at boot and the producer connects lazily. Kafka unavailability MUST NOT fail the
+  application bootstrap.
+
+### IX. Branching Strategy
+
+This project follows a **feature-branch workflow** tied to user stories, identical to
+ecommerce-orders.
+
+**Branch naming convention:**
+- Feature branches: `feature/US-XX-short-description`
+- Bug fixes: `fix/US-XX-short-description`
+- Infrastructure: `chore/short-description`
+
+Examples:
+- `feature/US-01-register-user`
+- `feature/US-02-login`
+- `feature/US-03-refresh-token`
+
+**Rules:**
+- `main` is always production-ready — never commit directly to main.
+- Every user story gets its own branch created from `main`.
+- Branch MUST be created before any implementation begins.
+- Each branch maps to exactly one user story.
+- PRs MUST reference the user story: "Implements US-01: Register a user".
+- Branches MUST be deleted after merge.
+- Commit messages MUST follow Conventional Commits:
+  `feat(US-01): add register user service`
+  `test(US-01): add unit tests for user aggregate`
+  `docs(US-01): add JSDoc to user registered event`
+
+**Automated branch creation (MANDATORY):**
+When /speckit.specify is invoked for a user story, Claude Code MUST:
+1. Ensure the working tree is clean (no uncommitted changes)
+2. Checkout main and pull latest: `git checkout main && git pull`
+3. Create and checkout the feature branch: `git checkout -b feature/US-XX-short-description`
+4. Only then proceed with generating the spec
+
+The branch MUST exist before any spec file is written.
+Claude Code MUST NOT generate spec files while on main.
+
+### X. Build & Code Quality Integrity (NON-NEGOTIABLE)
+
+The project MUST compile and pass all quality checks at all times.
+
+**After every task implementation, Claude Code MUST run in this order:**
+
+1. `npm run build`        — TypeScript compilation MUST pass
+2. `npm run lint`         — ESLint MUST pass with zero errors
+3. `npm run format:check` — Prettier formatting MUST be consistent
+4. `npm run test`         — all existing tests MUST still pass
+
+**Rules:**
+- If any of the above fails, Claude Code MUST fix it before
+  moving to the next task.
+- A failing build, lint error, or formatting violation
+  MUST never be committed to the branch.
+- TypeScript compilation errors are blocking issues — not warnings, not deferred items.
+- `npm run lint` runs with `--max-warnings 0`, so lint warnings are blocking as well as errors.
+- Claude Code MUST NOT mark a task as complete until
+  all four checks pass.
+
+**Tooling:**
+- Linter: ESLint with @typescript-eslint rules
+- Formatter: Prettier
+- Build: TypeScript compiler via NestJS build
+- Tests: Jest
+
+**ESLint rules (minimum):**
+- @typescript-eslint/no-explicit-any — error (enforces Principle V)
+- @typescript-eslint/explicit-function-return-type — error
+- @typescript-eslint/no-unused-vars — error
+- prettier/prettier — error
+
+**Configuration files required:**
+- ESLint config (`eslint.config.mjs` or `.eslintrc.js`)
+- `.prettierrc` — Prettier config
+- `tsconfig.json` — strict mode enabled
+  (`strict: true`, `noImplicitAny: true`, `strictNullChecks: true`)
+
+## Technology Stack
+
+| Concern | Choice |
+|---------|--------|
+| Runtime | Node.js 20+ + TypeScript |
+| Framework | NestJS |
+| REST API docs | Swagger / OpenAPI (auto-generated from NestJS decorators) |
+| Persistence | TypeORM + PostgreSQL |
+| Token signing & JWKS | `jose` (RS256) |
+| Password hashing | `argon2` (argon2id) |
+| Rate limiting | `@nestjs/throttler` |
+| Messaging | Kafka via `kafkajs` |
+| Validation | `class-validator` + `class-transformer` |
+| Testing | Jest, Supertest, `@nestjs/testing`, testcontainers (PostgreSQL, Kafka) |
+| Containerization | Docker (multi-stage `Dockerfile`) |
+| HTTP port | `PORT` environment variable, default `3001` (`3000` is Orders, `8080` is Kafka UI) |
+| Local infrastructure | ecommerce-infra (docker compose): PostgreSQL `localhost:5435`, database `identity`, user `identity_user` / `identity_pass` (to be added to ecommerce-infra); Kafka `localhost:9092` |
+
+Introducing a new runtime dependency that duplicates a capability already provided by the stack above requires an ADR in `docs/adr/` before the PR can be merged.
+
+## Out of Scope
+
+The following are out of scope for the whole service unless this constitution is amended:
+
+- Email verification
+- Password reset
+- Social login
+- Multi-factor authentication
+- User profile editing
+- Changing roles through the API
+
+A spec that requires any of them MUST NOT be planned until an amendment is merged.
+
+## Documentation Standards
+
+All public classes, methods, and interfaces MUST carry JSDoc comments.
+Swagger/OpenAPI annotations MUST be present on all REST endpoints and DTOs so that the spec is auto-generated without manual editing; protected endpoints MUST declare their bearer authentication.
+Kafka event payloads MUST be documented (field names, types, semantics) in the event class JSDoc and in `ecommerce-infra/docs/events.md`.
+That documentation MUST stay consistent with the platform-wide contract in
+`ecommerce-infra/docs/events.md`: a payload change updates both in the same change, and a
+discrepancy is a defect.
+Each NestJS module MUST include a `README.md` describing its responsibility, exposed endpoints, and domain events it produces.
+The repository `README.md` MUST state that HTTPS is required outside local development and MUST document the script that generates the development key pair.
+Architectural decisions MUST be recorded as ADRs in `docs/adr/` using the standard template (Context / Decision / Consequences).
+ADRs are numbered sequentially with a four-digit prefix (`0001-short-title.md`, `0002-...`), are
+never renumbered, and are indexed in `docs/adr/README.md`. A superseded ADR is kept and marked as
+superseded by the newer one.
 
 ## Governance
-<!-- Example: Constitution supersedes all other practices; Amendments require documentation, approval, migration plan -->
 
-[GOVERNANCE_RULES]
-<!-- Example: All PRs/reviews must verify compliance; Complexity must be justified; Use [GUIDANCE_FILE] for runtime development guidance -->
+This constitution supersedes all other project conventions and style guides. When a conflict arises, the constitution takes precedence.
 
-**Version**: [CONSTITUTION_VERSION] | **Ratified**: [RATIFICATION_DATE] | **Last Amended**: [LAST_AMENDED_DATE]
-<!-- Example: Version: 2.1.1 | Ratified: 2025-06-13 | Last Amended: 2025-07-16 -->
+**Amendment procedure**: Any amendment requires (1) a draft PR updating this file, (2) a version bump per the policy below, (3) approval from at least one other maintainer, and (4) a migration note if existing code must change.
+
+**Versioning policy**:
+- MAJOR: Removal or redefinition of an existing principle (breaking governance change).
+- MINOR: Addition of a new principle or materially expanded guidance.
+- PATCH: Clarifications, wording refinements, typo fixes, non-semantic changes.
+
+**Compliance**: Every PR review MUST verify that no constitutional principle is violated. Reviewers are empowered to block merges for violations without exception. New principles take effect immediately upon merge.
+
+**Version**: 1.0.0 | **Ratified**: 2026-11-17 | **Last Amended**: 2026-11-17

@@ -1,10 +1,11 @@
-import { BadRequestException, ConflictException } from '@nestjs/common';
+import { BadRequestException, ConflictException, UnauthorizedException } from '@nestjs/common';
 import { CommandBus } from '@nestjs/cqrs';
 import { LoginCommand } from '../../../src/commands/login.command';
 import { RegisterCustomerCommand } from '../../../src/commands/register-customer.command';
 import { AuthController } from '../../../src/controllers/auth.controller';
 import { Email } from '../../../src/domain/email.value-object';
 import { DuplicateEmailError } from '../../../src/domain/errors/duplicate-email.error';
+import { InvalidCredentialsError } from '../../../src/domain/errors/invalid-credentials.error';
 import { UserValidationError } from '../../../src/domain/errors/user-validation.error';
 import { User } from '../../../src/domain/user.aggregate';
 import { UserName } from '../../../src/domain/user-name.value-object';
@@ -109,6 +110,28 @@ describe('AuthController', () => {
       await expect(controller.login(loginBody, '203.0.113.7')).rejects.toBeInstanceOf(
         BadRequestException,
       );
+    });
+
+    it('should map InvalidCredentialsError to the generic 401 body', async () => {
+      execute.mockRejectedValue(new InvalidCredentialsError());
+
+      const error: unknown = await controller
+        .login(loginBody, '203.0.113.7')
+        .catch((caught: unknown) => caught);
+
+      expect(error).toBeInstanceOf(UnauthorizedException);
+      expect((error as UnauthorizedException).getResponse()).toEqual({
+        statusCode: 401,
+        message: 'invalid credentials',
+        error: 'Unauthorized',
+      });
+    });
+
+    it('should rethrow any other error unchanged', async () => {
+      const failure = new Error('database down');
+      execute.mockRejectedValue(failure);
+
+      await expect(controller.login(loginBody, '203.0.113.7')).rejects.toBe(failure);
     });
   });
 });

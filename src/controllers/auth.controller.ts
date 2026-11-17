@@ -7,6 +7,7 @@ import {
   HttpStatus,
   Ip,
   Post,
+  UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
 import { CommandBus } from '@nestjs/cqrs';
@@ -17,11 +18,13 @@ import {
   ApiOkResponse,
   ApiTags,
   ApiTooManyRequestsResponse,
+  ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 import { ThrottlerGuard } from '@nestjs/throttler';
 import { LoginCommand } from '../commands/login.command';
 import { RegisterCustomerCommand } from '../commands/register-customer.command';
 import { DuplicateEmailError } from '../domain/errors/duplicate-email.error';
+import { InvalidCredentialsError } from '../domain/errors/invalid-credentials.error';
 import { UserValidationError } from '../domain/errors/user-validation.error';
 import { User } from '../domain/user.aggregate';
 import { LoginDto } from '../dto/login.dto';
@@ -77,6 +80,9 @@ export class AuthController {
   @ApiBadRequestResponse({
     description: 'Malformed body, unknown property, missing or non-string field, or invalid email',
   })
+  @ApiUnauthorizedResponse({
+    description: 'invalid credentials (unknown email, wrong password or inactive user, alike)',
+  })
   async login(@Body() body: LoginDto, @Ip() clientIp: string): Promise<LoginResponseDto> {
     try {
       const result = await this.commandBus.execute<LoginCommand, LoginResult>(
@@ -84,6 +90,9 @@ export class AuthController {
       );
       return LoginResponseDto.fromResult(result);
     } catch (error) {
+      if (error instanceof InvalidCredentialsError) {
+        throw new UnauthorizedException('invalid credentials');
+      }
       throw AuthController.toHttpError(error);
     }
   }

@@ -15,6 +15,8 @@ import { OutboundDeadLetterRepository } from './repositories/outbound-dead-lette
 import { UserRepository } from './repositories/user.repository';
 import { Argon2PasswordHasher } from './infra/security/argon2-password-hasher';
 import { PasswordHasher } from './services/ports/password-hasher';
+import { UserEventPublisher } from './services/ports/user-event-publisher';
+import { UserEventsProducer } from './infra/kafka/user-events.producer';
 import { RegisterCustomerService } from './services/register-customer.service';
 
 /** Root module of the identity service. */
@@ -43,6 +45,7 @@ import { RegisterCustomerService } from './services/register-customer.service';
     UserRepository,
     OutboundDeadLetterRepository,
     { provide: PasswordHasher, useClass: Argon2PasswordHasher },
+    { provide: UserEventPublisher, useClass: UserEventsProducer },
     RegisterCustomerService,
   ],
 })

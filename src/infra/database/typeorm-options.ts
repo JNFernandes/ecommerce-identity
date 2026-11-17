@@ -1,6 +1,8 @@
 import { TypeOrmModuleOptions } from '@nestjs/typeorm';
 import { PostgresConnectionOptions } from 'typeorm/driver/postgres/PostgresConnectionOptions';
 import { DatabaseConfig } from '../../config/configuration';
+import { OutboundDeadLetterEntity } from './entities/outbound-dead-letter.entity';
+import { UserEntity } from './entities/user.entity';
 
 /**
  * Glob of the TypeORM migrations, next to this file. It resolves to the `.ts` sources under
@@ -10,6 +12,9 @@ export const MIGRATIONS_GLOB = `${__dirname}/migrations/*{.ts,.js}`;
 
 /** Glob of the TypeORM entities, used by the migration CLI data source. */
 export const ENTITIES_GLOB = `${__dirname}/entities/*.entity{.ts,.js}`;
+
+/** Every TypeORM entity of the service. */
+export const ENTITIES = [UserEntity, OutboundDeadLetterEntity];
 
 /**
  * Connection options shared by the application and the migration CLI. The schema is owned by the
@@ -24,13 +29,14 @@ export function buildDataSourceOptions(dbConfig: DatabaseConfig): PostgresConnec
     password: dbConfig.password,
     database: dbConfig.database,
     synchronize: false,
+    entities: ENTITIES,
     migrations: [MIGRATIONS_GLOB],
   };
 }
 
 /**
- * The application's TypeORM options: entities are registered by their feature modules, and
- * pending migrations are applied at startup unless `migrationsRun` is false.
+ * The application's TypeORM options: the shared entities plus any registered by feature modules,
+ * and pending migrations applied at startup unless `migrationsRun` is false.
  */
 export function buildTypeOrmOptions(dbConfig: DatabaseConfig): TypeOrmModuleOptions {
   return {

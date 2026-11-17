@@ -35,7 +35,7 @@ No endpoint can change a user's role ([ADR 0003](docs/adr/0003-admin-seed-and-no
 | `POST /auth/login` | public, rate limited per IP and per email | implemented |
 | `POST /auth/refresh` | public (refresh token) | planned |
 | `POST /auth/logout` | public (refresh token) | planned |
-| `GET /.well-known/jwks.json` | public | planned |
+| `GET` / `HEAD /.well-known/jwks.json` | public, not rate limited | implemented |
 | `GET /users/me` | `CUSTOMER`, `ADMIN` | planned |
 | `GET /users` | `ADMIN` | planned |
 | `PATCH /users/{id}/status` | `ADMIN` | planned |
@@ -44,6 +44,14 @@ No endpoint can change a user's role ([ADR 0003](docs/adr/0003-admin-seed-and-no
 PostgreSQL answers, and `503` when it does not. The `kafka` field (`idle`, `connected`,
 `unavailable`) is informational and never fails the check: the producer connects lazily on the
 first publish.
+
+`GET /.well-known/jwks.json` returns the public keys that verify access tokens, as
+`{ "keys": [{ "kty": "RSA", "use": "sig", "alg": "RS256", "kid", "n", "e" }] }`: the active
+signing key first, then the retired keys still accepted, in configured order. It needs no
+authentication (any `Authorization` header is ignored), is not rate limited, and touches neither
+PostgreSQL nor Kafka. Responses carry `Cache-Control: public, max-age=<JWKS_CACHE_SECONDS>` and a
+strong `ETag`; a request whose `If-None-Match` matches (exact, `W/` form, in a list, or `*`) gets
+`304` with the same headers and no body.
 
 ### `POST /auth/register`
 
@@ -91,8 +99,18 @@ SHA-256 thumbprint of the public key. Claims, exactly:
 | `iat` / `exp` | Issue time; `iat + JWT_ACCESS_TTL_SECONDS` |
 | `jti` | Unique id (UUID) |
 
-Verifiers must check the signature, `iss`, `aud` and `exp`. Until the JWKS endpoint exists, they
-can use `keys/public.pem`.
+### Verifying access tokens (downstream services)
+
+Implemented and tested by `tests/support/reference-verifier.ts`
+([contract](specs/003-jwks-key-rotation/contracts/verification-contract.md)):
+
+1. Fetch `GET /.well-known/jwks.json` and cache it (honour `Cache-Control`, revalidate with `ETag`).
+2. Accept **RS256 only**; reject `none`, `HS*` and anything else.
+3. Require a `kid` in the header and use the published key with that `kid`; never try every key.
+4. Check the signature, then `iss` = `JWT_ISSUER`, `aud` contains `JWT_AUDIENCE`, `exp` in the future.
+5. Unknown `kid`: refetch the key set **at most once per minute** (counted from the previous
+   refetch; the initial load does not count). Still unknown: reject.
+6. Take `sub`, `customerId` and `roles` only from the verified token.
 
 ## Events
 
@@ -154,12 +172,28 @@ The RS256 private key is read from `JWT_PRIVATE_KEY_PATH` and is **never committ
 `*.pem` are git-ignored ([ADR 0001](docs/adr/0001-rs256-access-tokens-with-jwks.md)).
 
 - `npm run keys:generate` writes a 2048-bit RSA pair to `./keys` (`private.pem` PKCS#8 with mode
-  0600, `public.pem`) and prints the paths and the `kid`, never the key. It refuses to overwrite
-  existing keys unless run as `npm run keys:generate -- --force`.
+  0600, `public.pem`) and prints the paths and the `kid`, never the key.
+  `npm run keys:generate -- --name next` writes `keys/next-private.pem` and `keys/next-public.pem`
+  instead (`--name` matches `^[A-Za-z0-9_-]+$`). An existing pair is never overwritten unless
+  `--force` is passed; unknown flags and bad names fail and write nothing.
+- `JWT_RETIRED_PUBLIC_KEY_PATHS` lists public key files (SPKI `PUBLIC KEY` or PKCS#1
+  `RSA PUBLIC KEY`, one PEM block each) that are published for verification but never sign.
 - At startup the key must exist and be an RSA private key (PKCS#8 or PKCS#1) of at least 2048
   bits; otherwise the service exits with an error that names the problem and never contains key
   content.
+- Each retired file must hold exactly one RSA public key of at least 2048 bits. A private key,
+  several blocks, a certificate, a missing file, or a key that duplicates another (same `kid`)
+  stops startup with an error naming the file(s).
 - The `kid` is derived from the key, so it stays the same across restarts.
+
+### Rotating the signing key
+
+1. `npm run keys:generate -- --name next` creates the new pair.
+2. Point `JWT_PRIVATE_KEY_PATH` at `keys/next-private.pem`.
+3. Add the previous public key (e.g. `keys/public.pem`) to `JWT_RETIRED_PUBLIC_KEY_PATHS`.
+4. Restart. New tokens carry the new `kid`; tokens signed by the previous key still verify.
+5. After the access token lifetime (`JWT_ACCESS_TTL_SECONDS`) plus the JWKS cache time
+   (`JWKS_CACHE_SECONDS`), remove the previous key from `JWT_RETIRED_PUBLIC_KEY_PATHS` and restart.
 
 ## Environment variables
 
@@ -189,6 +223,8 @@ The RS256 private key is read from `JWT_PRIVATE_KEY_PATH` and is **never committ
 | `JWT_ACCESS_TTL_SECONDS` | `900` | Access token lifetime, in seconds |
 | `JWT_REFRESH_TTL_SECONDS` | `604800` | Refresh token lifetime, in seconds (7 days) |
 | `JWT_PRIVATE_KEY_PATH` | unset, **required** | Path of the RS256 private key PEM (e.g. `./keys/private.pem`) |
+| `JWT_RETIRED_PUBLIC_KEY_PATHS` | empty | Comma-separated retired public key PEM paths, published after the active key, in order |
+| `JWKS_CACHE_SECONDS` | `300` | `max-age` of the key set; a non-negative integer, otherwise startup fails |
 
 ## Quality gate
 

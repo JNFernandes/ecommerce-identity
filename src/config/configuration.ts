@@ -45,6 +45,20 @@ export interface JwtConfig {
   privateKeyPath: string | undefined;
   /** Refresh token lifetime in seconds (`JWT_REFRESH_TTL_SECONDS`, default 604800 = 7 days). */
   refreshTtlSeconds: number;
+  /**
+   * Paths of retired RS256 public keys still published for verification
+   * (`JWT_RETIRED_PUBLIC_KEY_PATHS`, comma-separated, in order). Empty or unset: none.
+   */
+  retiredPublicKeyPaths: string[];
+}
+
+/** Key set endpoint settings (`JWKS_*`). */
+export interface JwksConfig {
+  /**
+   * Raw `JWKS_CACHE_SECONDS` value (default 300 when unset). Kept raw so an invalid value fails
+   * startup through `parseNonNegativeInteger` instead of silently falling back.
+   */
+  cacheSeconds: string | undefined;
 }
 
 /** argon2id password hashing parameters (`ARGON2_*`). */
@@ -96,6 +110,7 @@ export interface AppConfig {
   database: DatabaseConfig;
   kafka: KafkaConfig;
   jwt: JwtConfig;
+  jwks: JwksConfig;
   argon2: Argon2Config;
   rateLimit: RateLimitConfig;
 }
@@ -130,6 +145,31 @@ export function parseInteger(raw: string | undefined, fallback: number): number 
   return Number.isNaN(parsed) ? fallback : parsed;
 }
 
+/**
+ * Parses a strict non-negative integer setting: unset or empty yields `fallback`; anything else
+ * that is not a plain non-negative integer is rejected.
+ *
+ * @param raw The raw environment value.
+ * @param fallback Value used when `raw` is unset or empty.
+ * @param name The variable name, used in the error message.
+ * @throws Error `"<name> must be a non-negative integer"` for a negative, decimal or non-numeric value.
+ */
+export function parseNonNegativeInteger(
+  raw: string | undefined,
+  fallback: number,
+  name: string,
+): number {
+  const value = optional(raw);
+  if (value === undefined) {
+    return fallback;
+  }
+  const parsed = Number(value);
+  if (!/^\d+$/.test(value) || !Number.isSafeInteger(parsed)) {
+    throw new Error(`${name} must be a non-negative integer`);
+  }
+  return parsed;
+}
+
 /** Reads the whole configuration from environment variables, with local-development defaults. */
 export default (): AppConfig => ({
   port: parseInteger(process.env.PORT, DEFAULT_PORT),
@@ -156,6 +196,10 @@ export default (): AppConfig => ({
     accessTtlSeconds: parseInteger(process.env.JWT_ACCESS_TTL_SECONDS, 900),
     privateKeyPath: optional(process.env.JWT_PRIVATE_KEY_PATH),
     refreshTtlSeconds: parseInteger(process.env.JWT_REFRESH_TTL_SECONDS, 604800),
+    retiredPublicKeyPaths: parseList(process.env.JWT_RETIRED_PUBLIC_KEY_PATHS),
+  },
+  jwks: {
+    cacheSeconds: optional(process.env.JWKS_CACHE_SECONDS),
   },
   argon2: {
     memoryCostKib: parseInteger(process.env.ARGON2_MEMORY_COST_KIB, 65536),

@@ -1,8 +1,14 @@
-import { mkdtempSync, readFileSync, statSync } from 'node:fs';
+import { mkdtempSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { generateKeys } from '../../../scripts/keys-generate';
-import { loadSigningKey } from '../../../src/infra/security/signing-key';
+import { generateKeys, parseCliArgs } from '../../../scripts/keys-generate';
+import { loadKeyRing } from '../../../src/infra/security/key-ring';
+import { SigningKey } from '../../../src/infra/security/signing-key';
+
+/** Loads a private key file the way the service does at startup. */
+async function loadSigningKey(path: string): Promise<SigningKey> {
+  return (await loadKeyRing({ activePrivateKeyPath: path, retiredPublicKeyPaths: [] })).activeKey;
+}
 
 /** A new empty temp directory. */
 function tempDir(): string {
@@ -54,5 +60,62 @@ describe('generateKeys', () => {
 
     expect(second.kid).not.toBe(first.kid);
     expect((await loadSigningKey(second.privateKeyPath)).kid).toBe(second.kid);
+  });
+
+  it('should write a named pair and leave the default pair untouched', async () => {
+    const dir = tempDir();
+    const defaults = await generateKeys(dir, { force: false });
+    const defaultPem = readFileSync(defaults.privateKeyPath, 'utf8');
+
+    const next = await generateKeys(dir, { force: false, name: 'next' });
+
+    expect(next.privateKeyPath).toBe(join(dir, 'next-private.pem'));
+    expect(next.publicKeyPath).toBe(join(dir, 'next-public.pem'));
+    expect(next.kid).not.toBe(defaults.kid);
+    expect((await loadSigningKey(next.privateKeyPath)).kid).toBe(next.kid);
+    expect(readFileSync(defaults.privateKeyPath, 'utf8')).toBe(defaultPem);
+  });
+
+  it('should refuse to overwrite a named pair without force and overwrite it with force', async () => {
+    const dir = tempDir();
+    const first = await generateKeys(dir, { force: false, name: 'next' });
+    const firstPem = readFileSync(first.privateKeyPath, 'utf8');
+
+    await expect(generateKeys(dir, { force: false, name: 'next' })).rejects.toThrow(
+      `refusing to overwrite ${first.privateKeyPath}, ${first.publicKeyPath}`,
+    );
+    expect(readFileSync(first.privateKeyPath, 'utf8')).toBe(firstPem);
+
+    const second = await generateKeys(dir, { force: true, name: 'next' });
+    expect(second.kid).not.toBe(first.kid);
+  });
+
+  it.each(['../x', 'a.b', '', 'a/b', 'a b'])(
+    'should reject the name %p and write nothing',
+    async (name) => {
+      const dir = tempDir();
+
+      await expect(generateKeys(dir, { force: true, name })).rejects.toThrow(
+        '--name must match ^[A-Za-z0-9_-]+$',
+      );
+      expect(readdirSync(dir)).toEqual([]);
+    },
+  );
+});
+
+describe('parseCliArgs', () => {
+  it('should default to the unnamed pair without force', () => {
+    expect(parseCliArgs([])).toEqual({ force: false, name: undefined });
+  });
+
+  it('should read --name and --force', () => {
+    expect(parseCliArgs(['--name', 'next', '--force'])).toEqual({ force: true, name: 'next' });
+    expect(parseCliArgs(['--name=next'])).toEqual({ force: false, name: 'next' });
+  });
+
+  it('should reject unknown flags, positionals and a missing name value', () => {
+    expect(() => parseCliArgs(['--bogus'])).toThrow();
+    expect(() => parseCliArgs(['next'])).toThrow();
+    expect(() => parseCliArgs(['--name'])).toThrow();
   });
 });

@@ -5,7 +5,8 @@ import { join } from 'node:path';
 import { decodeProtectedHeader, JWTPayload, jwtVerify } from 'jose';
 import { Role } from '../../../src/domain/role.enum';
 import { JoseTokenIssuer } from '../../../src/infra/security/jose-token-issuer';
-import { loadSigningKey, SigningKey } from '../../../src/infra/security/signing-key';
+import { loadKeyRing } from '../../../src/infra/security/key-ring';
+import { SigningKey } from '../../../src/infra/security/signing-key';
 import { TokenIssuer } from '../../../src/services/ports/token-issuer';
 
 const ISSUER = 'https://identity.example.com';
@@ -24,7 +25,8 @@ describe('JoseTokenIssuer', () => {
   beforeAll(async () => {
     const path = join(mkdtempSync(join(tmpdir(), 'issuer-spec-')), 'private.pem');
     writeFileSync(path, privateKey.export({ type: 'pkcs8', format: 'pem' }));
-    signingKey = await loadSigningKey(path);
+    signingKey = (await loadKeyRing({ activePrivateKeyPath: path, retiredPublicKeyPaths: [] }))
+      .activeKey;
     issuer = new JoseTokenIssuer(signingKey, {
       issuer: ISSUER,
       audience: AUDIENCE,

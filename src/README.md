@@ -17,6 +17,10 @@ Controller → Service → Domain → Repository (Constitution Principle I).
   the `login-ip` and `login-email` throttlers (`controllers/login-throttle.tracker.ts`); each route
   skips the other route's throttlers with `@SkipThrottle`. `InvalidCredentialsError` maps to the
   generic `401`, `UserValidationError` to `400`.
+- `GET` / `HEAD /.well-known/jwks.json` — `JwksController` → `JwksService` → `PublicKeySet`
+  (`KeyRing`). Public, not throttled (`@SkipThrottle` for every throttler), no Kafka or database.
+  Sends the precomputed body with `Cache-Control: public, max-age=<JWKS_CACHE_SECONDS>` and a
+  strong `ETag`; a matching `If-None-Match` (`controllers/if-none-match.ts`) gets `304`.
 - `GET /docs`, `GET /docs-json` — Swagger UI and OpenAPI document (`app.swagger.ts`).
 
 **Register write flow** (`RegisterCustomerService`):
@@ -51,13 +55,24 @@ Controller → Service → Domain → Repository (Constitution Principle I).
 
 - `services/ports/` — `TokenIssuer`, `RefreshTokenGenerator`, `Clock`; `PasswordHasher` gains
   `verify` and `dummyHash`.
-- `infra/security/` — `signing-key.ts` (`loadSigningKey`, `SigningKey` token, `SigningKeyError`:
+- `infra/security/` — `signing-key.ts` (`SigningKey` token, `SigningKeyError`:
   RSA ≥ 2048 bits from `JWT_PRIVATE_KEY_PATH`, `kid` = RFC 7638 thumbprint), `JoseTokenIssuer`
   (RS256), `CryptoRefreshTokenGenerator` (256-bit base64url value, SHA-256 hash).
 - `infra/time/` — `SystemClock`, the `Clock` adapter.
 - `repositories/refresh-token.repository.ts` — `RefreshTokenRepository` over `refresh_tokens`.
 - `AppModule` loads the signing key with an async factory and builds `TokenIssuer` only when
   `JWT_ISSUER` and `JWT_AUDIENCE` are set, so the app fails fast at startup otherwise.
+
+**Added by US-03:**
+
+- `infra/security/key-ring.ts` — `loadKeyRing` reads `JWT_PRIVATE_KEY_PATH` and
+  `JWT_RETIRED_PUBLIC_KEY_PATHS` once at startup; `buildKeyRing` validates every key (active RSA
+  private key, retired public-only RSA keys, all at least 2048 bits, no duplicate `kid`) and fails
+  fast with messages naming files, never key content. `KeyRing` holds the active `SigningKey`, the
+  allowlisted public JWKs (active first), the serialized body and its `ETag`.
+- `services/ports/public-key-set.ts` — `PublicKeySet` port, bound to `KeyRing`.
+- `services/jwks.service.ts` — `JwksService`; `AppModule` builds it with `JWKS_CACHE_SECONDS`
+  parsed strictly, so a bad value fails startup. `SigningKey` is now `ring.activeKey`.
 
 **Domain events produced:** `identity.user-registered` (`UserRegistered`, after the user is
 committed; contract in `ecommerce-infra/docs/events.md`).

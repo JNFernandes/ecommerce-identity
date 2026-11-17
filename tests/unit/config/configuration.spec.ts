@@ -1,4 +1,8 @@
-import configuration, { parseInteger, parseList } from '../../../src/config/configuration';
+import configuration, {
+  parseInteger,
+  parseList,
+  parseNonNegativeInteger,
+} from '../../../src/config/configuration';
 
 const VARIABLES = [
   'PORT',
@@ -15,6 +19,8 @@ const VARIABLES = [
   'JWT_ACCESS_TTL_SECONDS',
   'JWT_PRIVATE_KEY_PATH',
   'JWT_REFRESH_TTL_SECONDS',
+  'JWT_RETIRED_PUBLIC_KEY_PATHS',
+  'JWKS_CACHE_SECONDS',
   'ARGON2_MEMORY_COST_KIB',
   'ARGON2_TIME_COST',
   'ARGON2_PARALLELISM',
@@ -157,5 +163,51 @@ describe('configuration', () => {
     expect(parseInteger('  ', 7)).toBe(7);
     expect(parseInteger('abc', 7)).toBe(7);
     expect(parseInteger('42', 7)).toBe(42);
+  });
+
+  it('should default to no retired public keys', () => {
+    expect(configuration().jwt.retiredPublicKeyPaths).toEqual([]);
+  });
+
+  it('should read the retired public key paths in order, trimming and dropping empty entries', () => {
+    process.env.JWT_RETIRED_PUBLIC_KEY_PATHS = ' keys/a-public.pem, ,keys/b-public.pem,';
+
+    expect(configuration().jwt.retiredPublicKeyPaths).toEqual([
+      'keys/a-public.pem',
+      'keys/b-public.pem',
+    ]);
+  });
+
+  it('should keep the JWKS cache setting raw so it can be validated at startup', () => {
+    expect(configuration().jwks.cacheSeconds).toBeUndefined();
+
+    process.env.JWKS_CACHE_SECONDS = 'abc';
+
+    expect(configuration().jwks.cacheSeconds).toBe('abc');
+  });
+
+  describe('parseNonNegativeInteger', () => {
+    const NAME = 'JWKS_CACHE_SECONDS';
+
+    it('should fall back to the default when unset or empty', () => {
+      expect(parseNonNegativeInteger(undefined, 300, NAME)).toBe(300);
+      expect(parseNonNegativeInteger('', 300, NAME)).toBe(300);
+      expect(parseNonNegativeInteger('  ', 300, NAME)).toBe(300);
+    });
+
+    it('should accept a non-negative integer, including 0', () => {
+      expect(parseNonNegativeInteger('60', 300, NAME)).toBe(60);
+      expect(parseNonNegativeInteger(' 120 ', 300, NAME)).toBe(120);
+      expect(parseNonNegativeInteger('0', 300, NAME)).toBe(0);
+    });
+
+    it.each(['-1', '1.5', 'abc', '10s', '1e3', '+5', '0x10'])(
+      'should reject %p naming the variable',
+      (raw) => {
+        expect(() => parseNonNegativeInteger(raw, 300, NAME)).toThrow(
+          'JWKS_CACHE_SECONDS must be a non-negative integer',
+        );
+      },
+    );
   });
 });

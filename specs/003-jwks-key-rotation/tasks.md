@@ -116,7 +116,7 @@ No new packages, no migration, no scaffolding needed (plan: "No new packages", "
 
 - [X] T022 Update `README.md`: `GET /.well-known/jwks.json` description, settings `JWT_RETIRED_PUBLIC_KEY_PATHS` and `JWKS_CACHE_SECONDS`, `keys:generate --name/--force`, rotation runbook (generate → make active → previous public key retired → restart → remove after access token lifetime), and the verification contract (RS256 only, key by `kid`, check `iss`/`aud`/`exp`, refetch at most once per minute)
 - [X] T022a [P] Update the module README `src/README.md` (Constitution: module README lists endpoints): `GET`/`HEAD /.well-known/jwks.json` — `JwksController` → `JwksService` → `PublicKeySet` (`KeyRing`), public, unthrottled, no Kafka/DB, `Cache-Control`/`ETag`/304; key loading at startup via `KeyRing` (active + retired keys, fail fast)
-- [ ] T023 [P] Add `JWT_RETIRED_PUBLIC_KEY_PATHS=` and `JWKS_CACHE_SECONDS=300` with comments to `.env.example`
+- [X] T023 [P] Add `JWT_RETIRED_PUBLIC_KEY_PATHS=` and `JWKS_CACHE_SECONDS=300` with comments to `.env.example`
 - [ ] T024 [P] Add the US-03 note (one signing key + verify-only retired public keys, file-path config, manual rotation) to `docs/adr/0001-rs256-access-tokens-with-jwks.md` (R18); `docs/adr/README.md` unchanged unless the title changes
 - [ ] T025 Run `specs/003-jwks-key-rotation/quickstart.md` sections 2–4 by hand and record the result in that file
 

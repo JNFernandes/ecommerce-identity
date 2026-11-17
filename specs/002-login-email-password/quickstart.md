@@ -16,5 +16,15 @@
 6. **Fail fast**: unset `JWT_PRIVATE_KEY_PATH`, or point it at a missing or non-RSA file, then run `npm run start:dev`. The service exits with a message naming the problem and no key material.
 7. **Kafka down**: in infra, run `docker compose stop kafka`. Scenario 1 still returns 200.
 
+## Validation (2026-11-17)
+
+- [X] 1–3: 200 with the four fields and `expiresIn` 900; RS256 header with `kid` = key thumbprint and exactly the contract claims, verified with `keys/public.pem`; one row whose hash is `sha256(refreshToken)`, 7-day expiry, `revokedAt` null, `lastLoginAt` set.
+- [X] 4: wrong password, unknown email and disabled user all give the identical 401 body.
+- [X] 5: the 11th login from the same host within the window gets 429.
+- [X] 6: unset, missing and EC key each exit with code 1 and a message naming the problem, without key material.
+- [X] 7: with Kafka stopped, login returns 200.
+
+A dedicated `quickstart-us02@example.com` user was used instead of `ana@example.com` to leave existing dev data untouched. No secrets appeared in the service logs.
+
 ## Automated
 Run `npm run test:unit`, `npm run test:integration` and `npm run test:component` (Docker needed). The full quality gate is in CLAUDE.md.

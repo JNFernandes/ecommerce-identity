@@ -93,16 +93,41 @@ function parseActivePrivateKey({ path, pem }: KeyFile): KeyObject {
   return privateKey;
 }
 
+/** PEM labels a retired key file may use: SPKI and PKCS#1 public keys. */
+const RETIRED_PEM_LABELS: ReadonlySet<string> = new Set(['PUBLIC KEY', 'RSA PUBLIC KEY']);
+
 /**
- * Parses a retired public key: one `PUBLIC KEY` (SPKI) or `RSA PUBLIC KEY` (PKCS#1) PEM block.
- * Retired keys only verify; they never sign.
+ * Parses a retired public key: exactly one `PUBLIC KEY` (SPKI) or `RSA PUBLIC KEY` (PKCS#1) PEM
+ * block holding an RSA key of at least 2048 bits. Labels are checked before parsing, so a private
+ * key is rejected instead of having its public half silently derived. Retired keys only verify.
  */
 function parseRetiredPublicKey({ path, pem }: KeyFile): KeyObject {
-  try {
-    return createPublicKey(pem);
-  } catch {
-    throw new SigningKeyError(`retired public key file does not hold a public key in PEM: ${path}`);
+  const labels = [...pem.matchAll(/-----BEGIN ([A-Z0-9 ]+)-----/g)].map((match) => match[1].trim());
+  if (labels.some((label) => label.includes('PRIVATE'))) {
+    throw new SigningKeyError(`retired keys must be public only: ${path}`);
   }
+  const unparseable = `retired public key file must hold exactly one PUBLIC KEY or RSA PUBLIC KEY PEM block: ${path}`;
+  if (labels.length !== 1 || !RETIRED_PEM_LABELS.has(labels[0])) {
+    throw new SigningKeyError(unparseable);
+  }
+  let publicKey: KeyObject;
+  try {
+    publicKey = createPublicKey(pem);
+  } catch {
+    throw new SigningKeyError(unparseable);
+  }
+  if (publicKey.asymmetricKeyType !== 'rsa') {
+    throw new SigningKeyError(
+      `retired public key must be RSA, got ${publicKey.asymmetricKeyType ?? 'unknown'}: ${path}`,
+    );
+  }
+  const bits = publicKey.asymmetricKeyDetails?.modulusLength ?? 0;
+  if (bits < MIN_RSA_MODULUS_BITS) {
+    throw new SigningKeyError(
+      `retired public key must be at least ${MIN_RSA_MODULUS_BITS} bits, got ${bits}: ${path}`,
+    );
+  }
+  return publicKey;
 }
 
 /**
@@ -112,14 +137,24 @@ function parseRetiredPublicKey({ path, pem }: KeyFile): KeyObject {
  * @param retired Retired public key files (`JWT_RETIRED_PUBLIC_KEY_PATHS`), published for
  * verification only.
  * @returns The ring publishing the active key first, then the retired keys in the given order.
- * @throws SigningKeyError When a key is unusable. Messages name the file, never the content.
+ * @throws SigningKeyError When a key is unusable, a retired file holds private material, or two
+ * files hold the same key (same `kid`). Messages name the files, never the content.
  */
 export async function buildKeyRing(active: KeyFile, retired: readonly KeyFile[]): Promise<KeyRing> {
   const privateKey = parseActivePrivateKey(active);
   const activeJwk = await toPublicJwk(createPublicKey(privateKey));
+  const pathByKid = new Map<string, string>([[activeJwk.kid, active.path]]);
   const retiredJwks: PublicJwk[] = [];
   for (const file of retired) {
-    retiredJwks.push(await toPublicJwk(parseRetiredPublicKey(file)));
+    const jwk = await toPublicJwk(parseRetiredPublicKey(file));
+    const firstPath = pathByKid.get(jwk.kid);
+    if (firstPath !== undefined) {
+      throw new SigningKeyError(
+        `duplicate key id: ${firstPath} and ${file.path} hold the same key`,
+      );
+    }
+    pathByKid.set(jwk.kid, file.path);
+    retiredJwks.push(jwk);
   }
   return new KeyRing(new LoadedSigningKey(privateKey, activeJwk.kid), [activeJwk, ...retiredJwks]);
 }

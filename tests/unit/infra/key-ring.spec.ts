@@ -200,5 +200,93 @@ describe('buildKeyRing', () => {
         { path: 'keys/old-public.pem', pem: 'hello' },
       ]);
     });
+
+    describe('rejections', () => {
+      const active = activeFile(pem(rsa.privateKey));
+      const publicPem = (key: KeyObject): string =>
+        key.export({ type: 'spki', format: 'pem' }).toString();
+      const file = (content: string): KeyFile => ({ path: 'keys/old.pem', pem: content });
+
+      it.each([
+        ['PKCS#8 private key', (): string => pem(retiredA.privateKey)],
+        ['PKCS#1 private key', (): string => pem(retiredA.privateKey, 'pkcs1')],
+        [
+          'public key followed by a private key',
+          (): string => publicPem(retiredA.publicKey) + pem(retiredA.privateKey),
+        ],
+        [
+          'encrypted private key',
+          (): string =>
+            retiredA.privateKey
+              .export({ type: 'pkcs8', format: 'pem', cipher: 'aes-256-cbc', passphrase: 'x' })
+              .toString(),
+        ],
+      ])('should reject a %s as private material', async (_name, content) => {
+        await expectFailure(active, 'retired keys must be public only: keys/old.pem', [
+          file(content()),
+        ]);
+      });
+
+      it('should reject the active private key file listed as retired', async () => {
+        await expectFailure(active, 'retired keys must be public only: keys/active.pem', [active]);
+      });
+
+      it.each([
+        ['no PEM block', (): string => 'not a key'],
+        [
+          'two public key blocks',
+          (): string => publicPem(retiredA.publicKey) + publicPem(retiredB.publicKey),
+        ],
+        [
+          'a certificate',
+          (): string => '-----BEGIN CERTIFICATE-----\nMIIBAA==\n-----END CERTIFICATE-----\n',
+        ],
+        [
+          'a corrupt public key block',
+          (): string => '-----BEGIN PUBLIC KEY-----\nAAAA\n-----END PUBLIC KEY-----\n',
+        ],
+      ])('should reject %s as unparseable', async (_name, content) => {
+        await expectFailure(
+          active,
+          'must hold exactly one PUBLIC KEY or RSA PUBLIC KEY PEM block: keys/old.pem',
+          [file(content())],
+        );
+      });
+
+      it('should reject a non-RSA public key', async () => {
+        const ec = generateKeyPairSync('ec', { namedCurve: 'P-256' });
+
+        await expectFailure(active, 'retired public key must be RSA, got ec: keys/old.pem', [
+          file(publicPem(ec.publicKey)),
+        ]);
+      });
+
+      it('should reject a 1024-bit retired key', async () => {
+        const weak = generateKeyPairSync('rsa', { modulusLength: 1024 });
+
+        await expectFailure(active, 'at least 2048 bits, got 1024: keys/old.pem', [
+          file(publicPem(weak.publicKey)),
+        ]);
+      });
+
+      it('should reject the active public key listed as retired, naming both files', async () => {
+        await expectFailure(
+          active,
+          'duplicate key id: keys/active.pem and keys/old.pem hold the same key',
+          [file(publicPem(rsa.publicKey))],
+        );
+      });
+
+      it('should reject the same retired key listed twice, naming both files', async () => {
+        await expectFailure(
+          active,
+          'duplicate key id: keys/a-public.pem and keys/b-public.pem hold the same key',
+          [
+            retiredFile(retiredA.publicKey, 'spki', 'a'),
+            retiredFile(retiredA.publicKey, 'pkcs1', 'b'),
+          ],
+        );
+      });
+    });
   });
 });

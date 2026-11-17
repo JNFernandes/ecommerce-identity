@@ -3,12 +3,14 @@ import { NestFactory } from '@nestjs/core';
 import { ConfigService } from '@nestjs/config';
 import { AppModule } from './app.module';
 import { configureApp } from './app.setup';
+import { configureSwagger } from './app.swagger';
 import { DEFAULT_PORT } from './config/configuration';
 
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule);
 
   configureApp(app);
+  configureSwagger(app);
   // Run shutdown hooks on SIGTERM/SIGINT so the Kafka producer disconnects cleanly.
   app.enableShutdownHooks();
 

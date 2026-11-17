@@ -4,6 +4,8 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import configuration, { DatabaseConfig } from './config/configuration';
 import { buildTypeOrmOptions } from './infra/database/typeorm-options';
 import { KafkaModule } from './infra/kafka/kafka.module';
+import { HealthController } from './controllers/health.controller';
+import { HealthService } from './services/health.service';
 
 /** Root module of the identity service. */
 @Module({
@@ -16,5 +18,7 @@ import { KafkaModule } from './infra/kafka/kafka.module';
     }),
     KafkaModule,
   ],
+  controllers: [HealthController],
+  providers: [HealthService],
 })
 export class AppModule {}

@@ -12,6 +12,17 @@ in. Always CUSTOMER / ACTIVE with a new customerId; unknown properties rejected;
 only; 201 response without secrets; rate limited; save first, then publish
 identity.user-registered, dead-lettering a failed publish; works when Kafka is unreachable."
 
+## Clarifications
+
+### Session 2026-11-17
+
+- Q: How is a duplicate email answered? → A: 409 "email already registered"; enumeration risk is an accepted, documented trade-off.
+- Q: Password policy beyond length? → A: None: 10–128 characters and different from the email only.
+- Q: What is rate limiting keyed by? → A: Client IP.
+- Q: Is the name stored as sent or trimmed? → A: Trimmed.
+- Q: Event payload shape? → A: Exactly as in `ecommerce-infra/docs/events.md`; no extra fields.
+- Q: Any login or admin behaviour in this story? → A: None.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Create a customer account (Priority: P1)
@@ -110,7 +121,8 @@ unreachable and check 201 plus a stored dead-letter record.
 - **FR-003**: A duplicate email MUST return 409 with the generic message "email already
   registered"; the README MUST document this as an accepted trade-off.
 - **FR-004**: The password MUST be 10–128 characters and differ from the email; no other
-  composition rule applies. The name MUST be 1–100 characters.
+  composition rule applies. The name MUST be stored trimmed and be 1–100 characters after
+  trimming.
 - **FR-005**: Any property other than `email`, `name` and `password` MUST be rejected with 400; the
   body can never set roles, status or ids. A test MUST cover `"roles": ["ADMIN"]`.
 - **FR-006**: Every account created MUST have role `CUSTOMER`, status `ACTIVE`, a new user id and a
@@ -125,8 +137,8 @@ unreachable and check 201 plus a stored dead-letter record.
 - **FR-010**: The account MUST be committed before `identity.user-registered` is published; no
   event is published if the save fails.
 - **FR-011**: The event MUST carry `eventId` (UUID), `aggregateId` (user id), `occurredAt` (ISO
-  8601), `version` (1), `customerId`, `email` and `name`, keyed by `aggregateId`, and MUST match
-  `ecommerce-infra/docs/events.md`.
+  8601), `version` (1), `customerId`, `email` and `name` — exactly these fields, no others — keyed
+  by `aggregateId`, and MUST match `ecommerce-infra/docs/events.md`.
 - **FR-012**: If publishing fails, the registration MUST still return 201, the error MUST be logged
   with full context (topic, key, `eventId`, cause; never password or hash), and the event MUST be
   stored in an outbound dead-letter table with `status`, `retryCount`, `nextRetryAt` and the last
@@ -163,8 +175,8 @@ unreachable and check 201 plus a stored dead-letter record.
 
 ## Assumptions
 
-- Lengths are counted in characters (Unicode code points); the password is not trimmed; the name is
-  trimmed, and a name that is empty after trimming is rejected.
+- Lengths are counted in characters (Unicode code points); the password is not trimmed; a name that
+  is empty after trimming is rejected.
 - Email maximum length is 254 characters (standard limit).
 - "Differs from the email" compares the password with the normalized email, case-insensitively.
 - The client IP for rate limiting is the direct connection address unless a trusted proxy is

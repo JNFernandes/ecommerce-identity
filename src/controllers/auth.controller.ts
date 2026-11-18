@@ -43,6 +43,7 @@ import {
   LOGOUT_THROTTLER,
   REFRESH_THROTTLER,
 } from './login-throttle.tracker';
+import { Public } from './auth/public.decorator';
 
 /** Name of the throttler that limits `POST /auth/register` per client IP. */
 export const REGISTER_THROTTLER = 'register';
@@ -72,6 +73,7 @@ function onlyThrottlers(...own: string[]): MethodDecorator & ClassDecorator {
 
 /** Public authentication endpoints. */
 @ApiTags('auth')
+@Public()
 @Controller('auth')
 export class AuthController {
   /** @param commandBus Dispatches commands to their handlers. */

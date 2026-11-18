@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { APP_FILTER, APP_GUARD } from '@nestjs/core';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { CqrsModule } from '@nestjs/cqrs';
 import { TypeOrmModule } from '@nestjs/typeorm';
@@ -15,6 +16,8 @@ import { RefreshTokenEntity } from './infra/database/entities/refresh-token.enti
 import { UserEntity } from './infra/database/entities/user.entity';
 import { buildTypeOrmOptions } from './infra/database/typeorm-options';
 import { KafkaModule } from './infra/kafka/kafka.module';
+import { AccessTokenExceptionFilter } from './controllers/auth/access-token-exception.filter';
+import { JwtAuthGuard } from './controllers/auth/jwt-auth.guard';
 import { AuthController, REGISTER_THROTTLER } from './controllers/auth.controller';
 import { HealthController } from './controllers/health.controller';
 import { JwksController } from './controllers/jwks.controller';
@@ -31,10 +34,12 @@ import { RefreshTokenRepository } from './repositories/refresh-token.repository'
 import { UserRepository } from './repositories/user.repository';
 import { Argon2PasswordHasher } from './infra/security/argon2-password-hasher';
 import { CryptoRefreshTokenGenerator } from './infra/security/crypto-refresh-token-generator';
+import { JoseAccessTokenVerifier } from './infra/auth/jose-access-token-verifier';
 import { JoseTokenIssuer } from './infra/security/jose-token-issuer';
 import { KeyRing, loadKeyRing } from './infra/security/key-ring';
 import { SigningKey } from './infra/security/signing-key';
 import { SystemClock } from './infra/time/system-clock';
+import { AccessTokenVerifier } from './services/ports/access-token-verifier';
 import { Clock } from './services/ports/clock';
 import { PasswordHasher } from './services/ports/password-hasher';
 import { RefreshTokenGenerator } from './services/ports/refresh-token-generator';
@@ -61,6 +66,29 @@ function createTokenIssuer(signingKey: SigningKey, configService: ConfigService)
     throw new Error('JWT_AUDIENCE is not set');
   }
   return new JoseTokenIssuer(signingKey, { issuer, audience, accessTtlSeconds });
+}
+
+/**
+ * Builds the access token verifier over every published key (active and retired), failing fast
+ * when `JWT_ISSUER` or `JWT_AUDIENCE` is unset.
+ */
+function createAccessTokenVerifier(
+  ring: KeyRing,
+  configService: ConfigService,
+  clock: Clock,
+): Promise<AccessTokenVerifier> {
+  const { issuer, audience, clockToleranceSeconds } = configService.getOrThrow<JwtConfig>('jwt');
+  if (issuer === undefined) {
+    throw new Error('JWT_ISSUER is not set');
+  }
+  if (audience === undefined) {
+    throw new Error('JWT_AUDIENCE is not set');
+  }
+  return JoseAccessTokenVerifier.create(
+    ring.keys,
+    { issuer, audience, clockToleranceSeconds },
+    clock,
+  );
 }
 
 /**
@@ -149,6 +177,14 @@ function createJwksService(publicKeySet: PublicKeySet, configService: ConfigServ
     { provide: JwksService, inject: [PublicKeySet, ConfigService], useFactory: createJwksService },
     { provide: RefreshTokenGenerator, useClass: CryptoRefreshTokenGenerator },
     { provide: Clock, useClass: SystemClock },
+    {
+      provide: AccessTokenVerifier,
+      inject: [KeyRing, ConfigService, Clock],
+      useFactory: createAccessTokenVerifier,
+    },
+    // Global guards run in registration order: authentication first (default deny).
+    { provide: APP_GUARD, useClass: JwtAuthGuard },
+    { provide: APP_FILTER, useClass: AccessTokenExceptionFilter },
     { provide: UserEventPublisher, useClass: UserEventsProducer },
     RegisterCustomerService,
     LoginService,

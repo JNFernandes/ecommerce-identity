@@ -19,6 +19,7 @@ import {
   LOGOUT_THROTTLER,
   REFRESH_THROTTLER,
 } from './login-throttle.tracker';
+import { Public } from './auth/public.decorator';
 
 /**
  * Public key set endpoint (JWKS). **Public**: no authentication, any `Authorization` header is
@@ -26,6 +27,7 @@ import {
  * route with the same headers and no body.
  */
 @ApiTags('jwks')
+@Public()
 @Controller('.well-known')
 @SkipThrottle({
   [REGISTER_THROTTLER]: true,

@@ -334,4 +334,32 @@ describe('RefreshService', () => {
       },
     );
   });
+
+  describe('session limit', () => {
+    it('should cap the successor expiry at the session end near the end of the session', async () => {
+      sessionMaxSeconds = 8 * DAY;
+
+      await refresh();
+
+      expect(tx.rotations[0].next.expiresAt).toEqual(new Date('2026-11-09T00:00:00.000Z'));
+    });
+
+    it('should refuse as SESSION_EXPIRED past the session end and issue nothing', async () => {
+      sessionMaxSeconds = 4 * DAY;
+
+      await expect(refusalReason()).resolves.toBe(RefreshFailureReason.SESSION_EXPIRED);
+
+      expect(tx.revoked).toEqual([]);
+      expectNothingIssued();
+    });
+
+    it('should fall back to the token creation time when the family start is unknown', async () => {
+      startedAt = null;
+      sessionMaxSeconds = 8 * DAY;
+
+      await refresh();
+
+      expect(tx.rotations[0].next.expiresAt).toEqual(new Date('2026-11-09T00:00:00.000Z'));
+    });
+  });
 });

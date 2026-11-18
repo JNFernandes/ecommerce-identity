@@ -31,7 +31,8 @@ interface StatusChangeOutcome {
  * Everything runs in one transaction, in the lock order of `UserStatusTx`: the status-change
  * advisory lock, then the acting admin is re-read (they may have been disabled since their token
  * was issued), then the target row is locked. A disable writes the status and revokes every refresh
- * token of the user in the same transaction. Setting the status a user already has writes nothing.
+ * token of the user in the same transaction; an enable writes only the status. Setting the status a
+ * user already has writes nothing.
  */
 @CommandHandler(ChangeUserStatusCommand)
 export class ChangeUserStatusService implements ICommandHandler<
@@ -99,6 +100,11 @@ export class ChangeUserStatusService implements ICommandHandler<
       return { user, from, changed, revokedTokens };
     }
 
-    return { user, from, changed: false, revokedTokens: 0 };
+    // Enabling never touches refresh tokens: those revoked by the disable stay revoked.
+    const changed = user.enable(now);
+    if (changed) {
+      await tx.saveStatus(user);
+    }
+    return { user, from, changed, revokedTokens: 0 };
   }
 }

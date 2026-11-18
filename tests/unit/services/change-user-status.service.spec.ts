@@ -193,6 +193,48 @@ describe('ChangeUserStatusService', () => {
     });
   });
 
+  describe('enable', () => {
+    it('should save the ACTIVE status without revoking any token and log once', async () => {
+      const disabled = stored(CUSTOMER_ID, 'ana@example.com', Role.CUSTOMER, UserStatus.DISABLED);
+      setUp(admin, disabled);
+
+      await expect(change(CUSTOMER_ID, UserStatus.ACTIVE)).resolves.toMatchObject({
+        id: CUSTOMER_ID,
+        status: UserStatus.ACTIVE,
+      });
+
+      expect(tx.calls).toEqual([
+        'lockStatusChanges',
+        `findById:${ADMIN_ID}`,
+        `findByIdForUpdate:${CUSTOMER_ID}`,
+        'saveStatus',
+      ]);
+      expect(tx.saved[0].updatedAt).toEqual(NOW);
+      expect(loggedLines()).toEqual([
+        `user status changed: actorId=${ADMIN_ID} targetId=${CUSTOMER_ID} ` +
+          'from=DISABLED to=ACTIVE revokedTokens=0',
+      ]);
+    });
+
+    it('should write nothing and log nothing for an already ACTIVE user', async () => {
+      await expect(change(CUSTOMER_ID, UserStatus.ACTIVE)).resolves.toMatchObject({
+        status: UserStatus.ACTIVE,
+      });
+
+      expect(tx.wrote()).toBe(false);
+      expect(loggedLines()).toEqual([]);
+    });
+
+    it('should let an admin enable their own (already ACTIVE) account as a no-op', async () => {
+      await expect(change(ADMIN_ID, UserStatus.ACTIVE)).resolves.toMatchObject({
+        id: ADMIN_ID,
+        status: UserStatus.ACTIVE,
+      });
+
+      expect(tx.wrote()).toBe(false);
+    });
+  });
+
   describe('acting admin and target checks', () => {
     it.each([
       ['missing', (): User[] => [customer]],

@@ -79,6 +79,30 @@ export class User {
   }
 
   /**
+   * Creates the administrator seeded at startup: new `id`, no `customerId`, role `ADMIN`, status
+   * `ACTIVE`. Raises **no** event: admins are not customers, so no `UserRegistered` is published.
+   *
+   * @param email The validated, normalized email.
+   * @param name The validated, trimmed name.
+   * @param passwordHash The argon2id hash of a password that passed `PasswordPolicy`.
+   */
+  static registerAdmin(email: Email, name: UserName, passwordHash: string): User {
+    const now = new Date();
+    return new User({
+      id: randomUUID(),
+      customerId: null,
+      email,
+      name,
+      passwordHash,
+      roles: [Role.ADMIN],
+      status: UserStatus.ACTIVE,
+      createdAt: now,
+      updatedAt: now,
+      lastLoginAt: null,
+    });
+  }
+
+  /**
    * Rebuilds a user from persisted state. Raises no event.
    *
    * @param props The stored state.

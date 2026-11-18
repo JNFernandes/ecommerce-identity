@@ -95,7 +95,7 @@ description: "Task list for US-04: Refresh the session and log out"
 
 **Independent Test**: Compare the 401 bodies for each cause; send malformed bodies.
 
-- [ ] T017 [US3] Extend `tests/unit/services/refresh.service.spec.ts`: unknown hash → `UNKNOWN`, no lock or revoke; expired unused → `EXPIRED`, family not revoked; disabled user → `revokeFamily` then `INACTIVE_USER`; in every failure `TokenIssuer.issue` and `saveRotation` are not called and the reason is logged as `refresh refused reason=…`. Commit `test(US-04): cover refresh refusals in the handler`.
+- [X] T017 [US3] Extend `tests/unit/services/refresh.service.spec.ts`: unknown hash → `UNKNOWN`, no lock or revoke; expired unused → `EXPIRED`, family not revoked; disabled user → `revokeFamily` then `INACTIVE_USER`; in every failure `TokenIssuer.issue` and `saveRotation` are not called and the reason is logged as `refresh refused reason=…`. Commit `test(US-04): cover refresh refusals in the handler`.
 - [ ] T018 [US3] Component test `tests/component/refresh-failures.component.spec.ts`: unknown, expired (row `expiresAt` set in the past), reused and disabled-user tokens each return 401 with the byte-identical body `{"statusCode":401,"message":"invalid refresh token","error":"Unauthorized"}`; disabled user's family revoked, expired-unused family not revoked; missing field, number, empty string, malformed JSON and unknown property each return 400 on `POST /auth/refresh`. Commit `test(US-04): cover generic refresh failures and validation`.
 
 ---

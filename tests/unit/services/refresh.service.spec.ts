@@ -285,4 +285,53 @@ describe('RefreshService', () => {
       expect(loggedLines()).not.toContain(PRESENTED_HASH);
     });
   });
+
+  describe('refusals', () => {
+    it('should refuse an unknown hash as UNKNOWN without locking or revoking', async () => {
+      await expect(refusalReason('never-issued')).resolves.toBe(RefreshFailureReason.UNKNOWN);
+
+      expect(tx.calls).toEqual(['findByHash']);
+      expect(tx.revoked).toEqual([]);
+      expectNothingIssued();
+    });
+
+    it('should refuse an expired, unused token as EXPIRED without revoking the family', async () => {
+      token = storedToken(user, { expiresAt: new Date('2026-11-04T00:00:00.000Z') });
+
+      await expect(refusalReason()).resolves.toBe(RefreshFailureReason.EXPIRED);
+
+      expect(tx.revoked).toEqual([]);
+      expectNothingIssued();
+    });
+
+    it('should revoke the family, then refuse a token of a disabled user as INACTIVE_USER', async () => {
+      user = customer(UserStatus.DISABLED);
+      token = storedToken(user);
+
+      await expect(refusalReason()).resolves.toBe(RefreshFailureReason.INACTIVE_USER);
+
+      expect(tx.revoked).toEqual([{ familyId: FAMILY_ID, at: NOW }]);
+      expectNothingIssued();
+    });
+
+    it.each([
+      ['unknown', 'never-issued', RefreshFailureReason.UNKNOWN],
+      ['presented', PRESENTED, RefreshFailureReason.EXPIRED],
+    ])(
+      'should log the refusal reason for an %s token without the token or its hash',
+      async (_case, value, reason) => {
+        token = storedToken(user, { expiresAt: new Date('2026-11-04T00:00:00.000Z') });
+
+        await refusalReason(value);
+
+        expect(warn).toHaveBeenCalledWith(
+          expect.stringContaining(`refresh refused: reason=${reason}`),
+        );
+        expect(warn).toHaveBeenCalledWith(expect.stringContaining(`ip=${IP}`));
+        expect(loggedLines()).not.toContain(value);
+        expect(loggedLines()).not.toContain(PRESENTED_HASH);
+        expect(log).not.toHaveBeenCalled();
+      },
+    );
+  });
 });

@@ -2,6 +2,10 @@ import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { RefreshCommand } from '../../../src/commands/refresh.command';
 import { Email } from '../../../src/domain/email.value-object';
+import {
+  InvalidRefreshTokenError,
+  RefreshFailureReason,
+} from '../../../src/domain/errors/invalid-refresh-token.error';
 import { RefreshToken, RefreshTokenProps } from '../../../src/domain/refresh-token.aggregate';
 import { Role } from '../../../src/domain/role.enum';
 import { User } from '../../../src/domain/user.aggregate';
@@ -225,6 +229,60 @@ describe('RefreshService', () => {
         `refresh succeeded: userId=${user.id} familyId=${FAMILY_ID} ip=${IP}`,
       );
       expect(warn).not.toHaveBeenCalled();
+    });
+  });
+
+  /** Runs a refresh expected to fail and returns the error's reason. */
+  async function refusalReason(value = PRESENTED): Promise<RefreshFailureReason> {
+    const error: unknown = await refresh(value).catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(InvalidRefreshTokenError);
+    return (error as InvalidRefreshTokenError).reason;
+  }
+
+  /** Asserts that nothing was issued or stored. */
+  function expectNothingIssued(): void {
+    expect(issue).not.toHaveBeenCalled();
+    expect(generate).not.toHaveBeenCalled();
+    expect(tx.rotations).toEqual([]);
+  }
+
+  /** Every logged line, for secret checks. */
+  function loggedLines(): string {
+    return JSON.stringify([...log.mock.calls, ...warn.mock.calls]);
+  }
+
+  describe('reuse', () => {
+    it('should revoke the family, then refuse a used token as REUSED without issuing', async () => {
+      token = storedToken(user, { revokedAt: new Date('2026-11-04T00:00:00.000Z') });
+
+      await expect(refusalReason()).resolves.toBe(RefreshFailureReason.REUSED);
+
+      expect(tx.revoked).toEqual([{ familyId: FAMILY_ID, at: NOW }]);
+      expectNothingIssued();
+    });
+
+    it('should treat an expired and revoked token as REUSED and revoke the family', async () => {
+      token = storedToken(user, {
+        expiresAt: new Date('2026-11-04T00:00:00.000Z'),
+        revokedAt: new Date('2026-11-03T00:00:00.000Z'),
+      });
+
+      await expect(refusalReason()).resolves.toBe(RefreshFailureReason.REUSED);
+
+      expect(tx.revoked).toEqual([{ familyId: FAMILY_ID, at: NOW }]);
+      expectNothingIssued();
+    });
+
+    it('should log the reuse with ids and IP, never the token or its hash', async () => {
+      token = storedToken(user, { revokedAt: new Date('2026-11-04T00:00:00.000Z') });
+
+      await refusalReason();
+
+      expect(warn).toHaveBeenCalledWith(
+        `refresh token reuse detected: userId=${user.id} familyId=${FAMILY_ID} ip=${IP}`,
+      );
+      expect(loggedLines()).not.toContain(PRESENTED);
+      expect(loggedLines()).not.toContain(PRESENTED_HASH);
     });
   });
 });

@@ -143,7 +143,7 @@ description: "Task list for US-06: Seed the first administrator and let admins l
 - [X] T027 [P] Add commented-out `ADMIN_EMAIL`, `ADMIN_PASSWORD` and `ADMIN_NAME` with a short comment to `.env.example` (FR-018). Commit `docs(US-06): add the admin seed variables to .env.example`.
 - [X] T028 [P] Update `src/README.md` with `AdminSeedService`, `AdminSeedPolicy`, `ListUsersService`, `GetUserService`, the read models and the two endpoints. Commit `docs(US-06): list the admin seed and queries in the module README`.
 - [X] T029 [P] Mark the follow-up in `docs/adr/0003-admin-seed-and-no-role-change.md` as done, pointing to US-06 (no new ADR, R18); update the entry in `docs/adr/README.md` if it carries a status. Commit `docs(US-06): close the ADR 0003 follow-up`.
-- [ ] T030 Run `specs/006-admin-seed-list-users/quickstart.md` manually against `npm run start:dev` and record the results (date, pass/fail per step) at the end of the quickstart. Commit `docs(US-06): record the manual quickstart run`.
+- [X] T030 Run `specs/006-admin-seed-list-users/quickstart.md` manually against `npm run start:dev` and record the results (date, pass/fail per step) at the end of the quickstart. Commit `docs(US-06): record the manual quickstart run`.
 
 ---
 

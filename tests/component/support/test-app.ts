@@ -123,6 +123,34 @@ export async function useUnreachableKafka(): Promise<void> {
   process.env.KAFKA_CONNECTION_TIMEOUT_MS = '200';
 }
 
+/** Values of the admin seed variables (see {@link useAdminSeed}). */
+export interface AdminSeedValues {
+  /** `ADMIN_EMAIL`. */
+  email: string;
+  /** `ADMIN_PASSWORD`. */
+  password: string;
+  /** `ADMIN_NAME`; unset when omitted. */
+  name?: string;
+}
+
+/**
+ * Sets `ADMIN_EMAIL`, `ADMIN_PASSWORD` and `ADMIN_NAME` for the next app start; `undefined` unsets
+ * all three, so the seed is not configured.
+ */
+export function useAdminSeed(values: AdminSeedValues | undefined): void {
+  delete process.env.ADMIN_EMAIL;
+  delete process.env.ADMIN_PASSWORD;
+  delete process.env.ADMIN_NAME;
+  if (values === undefined) {
+    return;
+  }
+  process.env.ADMIN_EMAIL = values.email;
+  process.env.ADMIN_PASSWORD = values.password;
+  if (values.name !== undefined) {
+    process.env.ADMIN_NAME = values.name;
+  }
+}
+
 /** A provider replaced in the test app, e.g. the `Clock`. */
 export interface ProviderOverride {
   /** The injection token to replace. */

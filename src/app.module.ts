@@ -21,6 +21,7 @@ import { JwtAuthGuard } from './controllers/auth/jwt-auth.guard';
 import { AuthController, REGISTER_THROTTLER } from './controllers/auth.controller';
 import { HealthController } from './controllers/health.controller';
 import { JwksController } from './controllers/jwks.controller';
+import { UsersController } from './controllers/users.controller';
 import {
   LOGIN_EMAIL_THROTTLER,
   LOGIN_IP_THROTTLER,
@@ -47,6 +48,7 @@ import { TokenIssuer } from './services/ports/token-issuer';
 import { UserEventPublisher } from './services/ports/user-event-publisher';
 import { UserEventsProducer } from './infra/kafka/user-events.producer';
 import { DEFAULT_JWKS_CACHE_SECONDS, JwksService } from './services/jwks.service';
+import { GetCurrentUserService } from './services/get-current-user.service';
 import { LoginService } from './services/login.service';
 import { LogoutService } from './services/logout.service';
 import { PublicKeySet } from './services/ports/public-key-set';
@@ -149,7 +151,7 @@ function createJwksService(publicKeySet: PublicKeySet, configService: ConfigServ
     KafkaModule,
     CqrsModule,
   ],
-  controllers: [HealthController, AuthController, JwksController],
+  controllers: [HealthController, AuthController, JwksController, UsersController],
   providers: [
     HealthService,
     UserRepository,
@@ -190,6 +192,7 @@ function createJwksService(publicKeySet: PublicKeySet, configService: ConfigServ
     LoginService,
     RefreshService,
     LogoutService,
+    GetCurrentUserService,
   ],
 })
 export class AppModule {}

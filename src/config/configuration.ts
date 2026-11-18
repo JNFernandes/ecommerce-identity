@@ -123,6 +123,25 @@ export interface CorsConfig {
   allowedOrigins: string[];
 }
 
+/**
+ * Startup seed of the first administrator (`ADMIN_*`). Read once at startup and never logged: the
+ * seed runs only when no admin exists and both `email` and `password` are set.
+ */
+export interface AdminSeedConfig {
+  /** Administrator email (`ADMIN_EMAIL`), trimmed; empty or unset: `undefined`. */
+  email: string | undefined;
+  /**
+   * Administrator password (`ADMIN_PASSWORD`), kept exactly as given (never trimmed); empty or
+   * unset: `undefined`. Never logged.
+   */
+  password: string | undefined;
+  /** Administrator display name (`ADMIN_NAME`), trimmed; empty or unset: `Administrator`. */
+  name: string;
+}
+
+/** Default display name of the seeded administrator. */
+export const DEFAULT_ADMIN_NAME = 'Administrator';
+
 /** The whole service configuration. */
 export interface AppConfig {
   /** HTTP port (`PORT`, default 3001; 3000 is Orders, 8080 is Kafka UI). */
@@ -134,6 +153,7 @@ export interface AppConfig {
   jwks: JwksConfig;
   argon2: Argon2Config;
   rateLimit: RateLimitConfig;
+  admin: AdminSeedConfig;
 }
 
 /** Default HTTP port. */
@@ -229,6 +249,16 @@ function readJwtConfig(): JwtConfig {
   };
 }
 
+/** Reads the admin seed settings; the password is kept verbatim, only an empty value is unset. */
+function readAdminSeedConfig(): AdminSeedConfig {
+  const password = process.env.ADMIN_PASSWORD;
+  return {
+    email: optional(process.env.ADMIN_EMAIL),
+    password: password === undefined || password === '' ? undefined : password,
+    name: optional(process.env.ADMIN_NAME) ?? DEFAULT_ADMIN_NAME,
+  };
+}
+
 /** Reads the whole configuration from environment variables, with local-development defaults. */
 export default (): AppConfig => ({
   port: parseInteger(process.env.PORT, DEFAULT_PORT),
@@ -276,4 +306,5 @@ export default (): AppConfig => ({
       ttlMs: parseInteger(process.env.RATE_LIMIT_LOGOUT_TTL_MS, 60000),
     },
   },
+  admin: readAdminSeedConfig(),
 });

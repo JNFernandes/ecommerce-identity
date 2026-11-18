@@ -32,5 +32,6 @@ admins. Self-service role management is not needed at this stage.
   amendment and ADR); there is no runtime workflow for it.
 - Role changes made outside the API take effect for access tokens only when they expire; login and
   refresh read the current roles.
-- Follow-up: the admin story adds the seed, its idempotency (no duplicate admin on restart) and
-  tests.
+- Follow-up (done in US-06, `specs/006-admin-seed-list-users/`): `AdminSeedService` creates the
+  admin at startup only when none exists, never modifies or promotes an existing user, publishes
+  no event and never logs the password; restarts and concurrent starts leave exactly one admin.

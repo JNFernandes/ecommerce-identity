@@ -7,7 +7,10 @@ jest.setTimeout(180_000);
 
 const MIGRATION = 'CreateUsersAndOutboundDeadLetters20261117130000';
 /** Later migrations, undone first so this one can be reverted. */
-const LATER_MIGRATIONS = ['CreateRefreshTokensAndUserLastLogin20261117140000'];
+const LATER_MIGRATIONS = [
+  'CreateRefreshTokensAndUserLastLogin20261117140000',
+  'AddUserListIndexes20261118120000',
+];
 
 /** Inserts a customer row with the given email. */
 function insertUser(dataSource: DataSource, email: string): Promise<unknown> {

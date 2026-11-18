@@ -8,9 +8,10 @@ The rules for this repository are in the constitution,
 [`.specify/memory/constitution.md`](.specify/memory/constitution.md). The shared event contracts
 are in `ecommerce-infra/docs/events.md`, which is the source of truth.
 
-> **Status: in progress.** US-01 to US-05 are implemented: customer registration, login, the JWKS
-> endpoint with key rotation, refresh and logout, and `GET /users/me` with default-deny role guards.
-> Everything marked **planned** below is set by the constitution but not built yet.
+> **Status: in progress.** US-01 to US-06 are implemented: customer registration, login, the JWKS
+> endpoint with key rotation, refresh and logout, `GET /users/me` with default-deny role guards, the
+> startup admin seed, and the admin `GET /users` and `GET /users/{id}`. Everything marked **planned**
+> below is set by the constitution but not built yet.
 
 > **HTTPS is required outside local development.** This service receives passwords and issues
 > tokens; never expose it over plain HTTP except on `localhost`.
@@ -20,7 +21,7 @@ are in `ecommerce-infra/docs/events.md`, which is the source of truth.
 | Role | How it is created | `customerId` |
 |---|---|---|
 | `CUSTOMER` | Public registration (`POST /auth/register`) | New, generated at registration |
-| `ADMIN` | Only by a startup seed from `ADMIN_EMAIL` / `ADMIN_PASSWORD` when no admin exists (the seed is planned) | None |
+| `ADMIN` | Only by the startup seed from `ADMIN_EMAIL` / `ADMIN_PASSWORD` when no admin exists ([Admin seed](#admin-seed)) | None |
 
 No endpoint can change a user's role ([ADR 0003](docs/adr/0003-admin-seed-and-no-role-change.md)).
 
@@ -36,13 +37,34 @@ No endpoint can change a user's role ([ADR 0003](docs/adr/0003-admin-seed-and-no
 | `POST /auth/logout` | public (refresh token), rate limited per IP | implemented |
 | `GET` / `HEAD /.well-known/jwks.json` | public, not rate limited | implemented |
 | `GET /users/me` | `CUSTOMER`, `ADMIN` | implemented |
-| `GET /users` | `ADMIN` | planned |
+| `GET /users` | `ADMIN` | implemented |
+| `GET /users/{id}` | `ADMIN` | implemented |
 | `PATCH /users/{id}/status` | `ADMIN` | planned |
 
 `GET /users/me` returns the caller's account as stored now:
 `{ "id", "customerId", "email", "name", "roles", "status", "createdAt" }`. `customerId` is left out
 entirely for admins; no password, hash or token is ever returned. A user deleted or disabled after
 login gets the same `401` as an invalid token. It reads PostgreSQL only and works with Kafka down.
+
+`GET /users` lists users for admins, newest first (`createdAt` descending, then `id`), as
+`{ "items", "total", "limit", "offset" }`. Query parameters, all optional and combined with AND:
+
+| Parameter | Default | Rule |
+|---|---|---|
+| `limit` | `20` | Integer, 1–100 |
+| `offset` | `0` | Integer, ≥ 0 |
+| `role` | none | `CUSTOMER` or `ADMIN` |
+| `status` | none | `ACTIVE` or `DISABLED` |
+| `email` | none | Case-insensitive email prefix, matched literally (`%` and `_` are not wildcards), at most 254 characters; empty is ignored |
+
+Each item is `{ "id", "customerId", "email", "name", "roles", "status", "createdAt", "lastLoginAt" }`:
+`customerId` is left out for admins and `lastLoginAt` is `null` until the first login. No password
+or hash is ever returned. `total` counts every matching user; an offset past the end returns no
+items with the real total. An invalid or unknown parameter gets `400` with the validation messages.
+
+`GET /users/{id}` returns one user in the same shape: `404` (`user not found`) when no user has
+this id, `400` when the id is not a UUID. `GET /users/me` keeps its own handler. Both endpoints read
+PostgreSQL only and work with Kafka down.
 
 `GET /health` returns `200` with `{ "status": "ok", "database": "up", "kafka": "idle" }` when
 PostgreSQL answers, and `503` when it does not. The `kafka` field (`idle`, `connected`,
@@ -156,6 +178,32 @@ Implemented and tested by `tests/support/reference-verifier.ts`
 5. Unknown `kid`: refetch the key set **at most once per minute** (counted from the previous
    refetch; the initial load does not count). Still unknown: reject.
 6. Take `sub`, `customerId` and `roles` only from the verified token.
+
+## Admin seed
+
+Admins are never created through the API. At startup, after migrations and before the server
+accepts requests, the service creates the first administrator from three variables:
+
+| Variable | Rule |
+|---|---|
+| `ADMIN_EMAIL` | Same validation and normalization as registration (trimmed, lowercase) |
+| `ADMIN_PASSWORD` | Same policy as registration: 10–128 characters, different from the email. Stored only as an argon2id hash and never logged |
+| `ADMIN_NAME` | Optional, default `Administrator`; same rule as a registration name |
+
+| Situation | What happens |
+|---|---|
+| An admin already exists (any status) | Nothing; no log line |
+| No admin, and `ADMIN_EMAIL` or `ADMIN_PASSWORD` unset or empty | Nothing; a `warn` line; the service starts |
+| No admin, and a value breaks a rule | Nothing; an `error` line `ADMIN_<VAR>: <rule>` (never the value); the service starts |
+| No admin, and `ADMIN_EMAIL` belongs to a customer | Nothing; that user is never changed or promoted; an `error` line; the service starts |
+| No admin, valid values, free email | One `ADMIN` is created: `ACTIVE`, no `customerId`; the log shows its id only |
+| Another instance seeded it at the same moment | Nothing; a `warn` line |
+| Database unavailable | Startup fails, as for any database error |
+
+The seed publishes no event: `identity.user-registered` is for customers only. Restarts never change
+an existing admin, so changing `ADMIN_PASSWORD` later has no effect. **Remove `ADMIN_PASSWORD` from
+the environment after the first start**: it is only needed once, and leaving a plain-text admin
+password in the deployment configuration is a needless risk.
 
 ## Access control
 
@@ -307,6 +355,9 @@ The RS256 private key is read from `JWT_PRIVATE_KEY_PATH` and is **never committ
 | `JWT_PRIVATE_KEY_PATH` | unset, **required** | Path of the RS256 private key PEM (e.g. `./keys/private.pem`) |
 | `JWT_RETIRED_PUBLIC_KEY_PATHS` | empty | Comma-separated retired public key PEM paths, published after the active key, in order |
 | `JWKS_CACHE_SECONDS` | `300` | `max-age` of the key set; a non-negative integer, otherwise startup fails |
+| `ADMIN_EMAIL` | unset | Email of the first administrator, created at startup when no admin exists ([Admin seed](#admin-seed)) |
+| `ADMIN_PASSWORD` | unset | Password of that administrator; never logged. Remove it after the first start |
+| `ADMIN_NAME` | `Administrator` | Display name of that administrator |
 
 ## Quality gate
 
@@ -331,9 +382,10 @@ the local infrastructure is running.
 ```text
 src/
   config/          configuration read from environment variables
-  commands/        CQRS commands (RegisterCustomerCommand)
+  commands/        CQRS commands (RegisterCustomerCommand, Login, Refresh, Logout)
+  queries/         CQRS queries and read models (GetCurrentUser, ListUsers, GetUser)
   controllers/     HTTP I/O only (routing, DTO validation, response shaping)
-  services/        orchestration (command handlers); no business rules
+  services/        orchestration (command and query handlers, AdminSeedService); no business rules
     ports/         abstractions services depend on (PasswordHasher, UserEventPublisher)
   domain/          aggregates (User, RefreshToken), value objects, domain events — all business rules
   repositories/    persistence behind domain-facing interfaces

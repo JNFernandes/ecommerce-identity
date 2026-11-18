@@ -8,11 +8,21 @@ import {
   InvalidRefreshTokenError,
   RefreshFailureReason,
 } from '../../../src/domain/errors/invalid-refresh-token.error';
+import { UserNotFoundError } from '../../../src/domain/errors/user-not-found.error';
 import { UserValidationError } from '../../../src/domain/errors/user-validation.error';
 import { Role } from '../../../src/domain/role.enum';
 import { UserStatus } from '../../../src/domain/user-status.enum';
 
 describe('domain errors', () => {
+  it('should create a UserNotFoundError with a fixed message', () => {
+    const error = new UserNotFoundError();
+
+    expect(error).toBeInstanceOf(UserNotFoundError);
+    expect(error).toBeInstanceOf(Error);
+    expect(error.name).toBe('UserNotFoundError');
+    expect(error.message).toBe('user not found');
+  });
+
   it.each(Object.values(AccessTokenFailureReason))(
     'should use the same fixed message and keep the reason in an InvalidAccessTokenError for %s',
     (reason) => {

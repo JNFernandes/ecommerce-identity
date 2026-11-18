@@ -77,6 +77,35 @@ describe('User', () => {
     });
   });
 
+  describe('registerAdmin', () => {
+    it('should create an ACTIVE admin without a customerId', () => {
+      const user = User.registerAdmin(email, name, HASH);
+
+      expect(user.id).toMatch(UUID);
+      expect(user.customerId).toBeNull();
+      expect(user.email.value).toBe('ana@example.com');
+      expect(user.name.value).toBe('Ana Silva');
+      expect(user.passwordHash).toBe(HASH);
+      expect(user.roles).toEqual([Role.ADMIN]);
+      expect(user.status).toBe(UserStatus.ACTIVE);
+      expect(user.updatedAt).toEqual(user.createdAt);
+      expect(user.lastLoginAt).toBeNull();
+      expect(user.canLogin()).toBe(true);
+    });
+
+    it('should raise no domain event', () => {
+      const user = User.registerAdmin(email, name, HASH);
+
+      expect(user.pullDomainEvents()).toEqual([]);
+    });
+
+    it('should give every admin a new id', () => {
+      expect(User.registerAdmin(email, name, HASH).id).not.toBe(
+        User.registerAdmin(email, name, HASH).id,
+      );
+    });
+  });
+
   describe('restore', () => {
     const props = {
       id: '6f1c2a9e-8d43-4b0f-9a7e-2c5d1e3f4a5b',

@@ -67,10 +67,20 @@ export interface LoggedInAdmin {
 }
 
 /** Logs in with {@link FLOW_PASSWORD}; fails the test when the login does not succeed. */
-async function login(app: INestApplication, email: string): Promise<TokenPair> {
-  const response = await request(app.getHttpServer())
-    .post('/auth/login')
-    .send({ email, password: FLOW_PASSWORD });
+function login(app: INestApplication, email: string): Promise<TokenPair> {
+  return loginAs(app, email, FLOW_PASSWORD);
+}
+
+/**
+ * Logs in with the given credentials (e.g. the seeded admin's); fails the test when the login does
+ * not succeed.
+ */
+export async function loginAs(
+  app: INestApplication,
+  email: string,
+  password: string,
+): Promise<TokenPair> {
+  const response = await request(app.getHttpServer()).post('/auth/login').send({ email, password });
   if (response.status !== 200) {
     throw new Error(`login failed with ${response.status}`);
   }
@@ -78,8 +88,9 @@ async function login(app: INestApplication, email: string): Promise<TokenPair> {
 }
 
 /**
- * Inserts an `ADMIN` user (no `customerId`) through `UserRepository`, then logs it in normally. The
- * startup admin seed is not implemented yet, so tests create admins this way.
+ * Inserts an `ADMIN` user (no `customerId`) through `UserRepository`, then logs it in normally.
+ * Used by the US-05 guard tests, which need an admin without configuring the startup seed; tests
+ * of the admin endpoints use the real seed instead (`useAdminSeed` + `loginAs`).
  */
 export async function insertAdminAndLogin(
   app: INestApplication,

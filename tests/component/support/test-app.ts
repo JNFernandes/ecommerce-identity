@@ -6,6 +6,7 @@ import { AddressInfo, createServer } from 'net';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { PostgreSqlContainer, StartedPostgreSqlContainer } from '@testcontainers/postgresql';
+import { DataSource } from 'typeorm';
 import { AppModule } from '../../../src/app.module';
 import { configureApp } from '../../../src/app.setup';
 import { configureSwagger } from '../../../src/app.swagger';
@@ -114,6 +115,33 @@ export async function startPostgres(): Promise<StartedPostgreSqlContainer> {
 }
 
 /**
+ * Creates a new, empty database in the container and points `DATABASE_NAME` at it, so the next app
+ * start migrates and uses an empty schema (e.g. to run the admin seed again from scratch).
+ *
+ * @param container The running PostgreSQL container.
+ * @param name The new database name (unique per container).
+ */
+export async function useNewDatabase(
+  container: StartedPostgreSqlContainer,
+  name: string,
+): Promise<void> {
+  const admin = await new DataSource({
+    type: 'postgres',
+    host: container.getHost(),
+    port: container.getPort(),
+    username: container.getUsername(),
+    password: container.getPassword(),
+    database: container.getDatabase(),
+  }).initialize();
+  try {
+    await admin.query(`CREATE DATABASE "${name}"`);
+  } finally {
+    await admin.destroy();
+  }
+  process.env.DATABASE_NAME = name;
+}
+
+/**
  * Points Kafka at a closed local port with no retries and a short connection timeout, so every
  * publish fails within a fraction of a second (never the developer's `localhost:9092`).
  */
@@ -121,6 +149,34 @@ export async function useUnreachableKafka(): Promise<void> {
   process.env.KAFKA_BROKERS = `127.0.0.1:${await closedPort()}`;
   process.env.KAFKA_PRODUCER_RETRIES = '0';
   process.env.KAFKA_CONNECTION_TIMEOUT_MS = '200';
+}
+
+/** Values of the admin seed variables (see {@link useAdminSeed}). */
+export interface AdminSeedValues {
+  /** `ADMIN_EMAIL`. */
+  email: string;
+  /** `ADMIN_PASSWORD`. */
+  password: string;
+  /** `ADMIN_NAME`; unset when omitted. */
+  name?: string;
+}
+
+/**
+ * Sets `ADMIN_EMAIL`, `ADMIN_PASSWORD` and `ADMIN_NAME` for the next app start; `undefined` unsets
+ * all three, so the seed is not configured.
+ */
+export function useAdminSeed(values: AdminSeedValues | undefined): void {
+  delete process.env.ADMIN_EMAIL;
+  delete process.env.ADMIN_PASSWORD;
+  delete process.env.ADMIN_NAME;
+  if (values === undefined) {
+    return;
+  }
+  process.env.ADMIN_EMAIL = values.email;
+  process.env.ADMIN_PASSWORD = values.password;
+  if (values.name !== undefined) {
+    process.env.ADMIN_NAME = values.name;
+  }
 }
 
 /** A provider replaced in the test app, e.g. the `Clock`. */

@@ -30,6 +30,14 @@ Controller → Service → Domain → Repository (Constitution Principle I).
   `GetCurrentUserQuery`) → `UserRepository.findById` → `CurrentUserReadModel` →
   `CurrentUserResponseDto`. `@Roles(CUSTOMER, ADMIN)`. A missing or non-`ACTIVE` user throws
   `InvalidAccessTokenError(USER_UNAVAILABLE)`, the same 401 as a bad token; database errors stay 5xx.
+- `GET /users` — `UsersController.list` (`ListUsersQueryDto`) → `QueryBus` → `ListUsersService`
+  (`@QueryHandler` of `ListUsersQuery`) → `UserRepository.findPage` → `UserPageReadModel` →
+  `UserPageResponseDto`. `@Roles(ADMIN)`. Newest first (`createdAt`, `id` desc), AND filters on
+  role, status and a literal, case-insensitive email prefix.
+- `GET /users/{id}` — `UsersController.findOne` (`ParseUUIDPipe`, so a malformed id is `400`) →
+  `QueryBus` → `GetUserService` (`@QueryHandler` of `GetUserQuery`) →
+  `UserRepository.findSummaryById` → `UserSummaryResponseDto`. `@Roles(ADMIN)`. `UserNotFoundError`
+  maps to `404 user not found`; declared after `GET /users/me`.
 - `GET /docs`, `GET /docs-json` — Swagger UI and OpenAPI document (`app.swagger.ts`).
 
 **Register write flow** (`RegisterCustomerService`):
@@ -120,8 +128,27 @@ Controller → Service → Domain → Repository (Constitution Principle I).
   without exactly one policy.
 - `AuthController`, `JwksController` and `HealthController` are `@Public()` at class level.
 
+**Added by US-06 (admin seed and user listing):**
+
+- `domain/admin-seed-policy.ts` — `AdminSeedPolicy.precheck` (`SKIP_ADMIN_EXISTS`,
+  `SKIP_NOT_CONFIGURED`, `PROCEED`) and `decide` (`SKIP_EMAIL_TAKEN`, `CREATE`). `User.registerAdmin`
+  creates an `ACTIVE` admin without `customerId` and raises no event.
+- `services/admin-seed.service.ts` — `AdminSeedService` (`OnApplicationBootstrap`, after
+  migrations): `existsWithRole(ADMIN)` → `precheck` → `Email`, `UserName`, `PasswordPolicy` (an
+  error names the variable and rule, never the value) → `findByEmail` → `decide` →
+  `PasswordHasher.hash` → `User.registerAdmin` → `save`. Configuration problems are logged and
+  skipped; a concurrent `DuplicateEmailError` is a `warn`; database errors fail startup. No
+  publisher is injected. Settings: `admin` block of `config/configuration.ts` (`ADMIN_*`).
+- `queries/` — `ListUsersQuery`, `GetUserQuery`, and `UserSummaryReadModel` / `UserPageReadModel`
+  (no hash, no `updatedAt`), mapped by `UserRepository` directly from the entity.
+- `repositories/user.repository.ts` — `existsWithRole`, `findPage` (one query builder, `LIKE`
+  wildcards escaped, `getManyAndCount`) and `findSummaryById`.
+- Migration `AddUserListIndexes20261118120000` — `IDX_users_created_at_id` and
+  `IDX_users_email_lower_prefix` (`lower(email) text_pattern_ops`).
+
 **Domain events produced:** `identity.user-registered` (`UserRegistered`, after the user is
-committed; contract in `ecommerce-infra/docs/events.md`).
+committed; contract in `ecommerce-infra/docs/events.md`). Customers only: the admin seed publishes
+nothing.
 
 **Shared setup:** `app.setup.ts` (CORS from `CORS_ALLOWED_ORIGINS`, global `ValidationPipe` with
 `whitelist` and `forbidNonWhitelisted`) is applied by `main.ts` and by the tests.

@@ -33,8 +33,8 @@ No endpoint can change a user's role ([ADR 0003](docs/adr/0003-admin-seed-and-no
 | `GET /docs` (Swagger UI), `GET /docs-json` (OpenAPI) | public | implemented |
 | `POST /auth/register` | public, rate limited per IP | implemented |
 | `POST /auth/login` | public, rate limited per IP and per email | implemented |
-| `POST /auth/refresh` | public (refresh token) | planned |
-| `POST /auth/logout` | public (refresh token) | planned |
+| `POST /auth/refresh` | public (refresh token), rate limited per IP | implemented |
+| `POST /auth/logout` | public (refresh token), rate limited per IP | implemented |
 | `GET` / `HEAD /.well-known/jwks.json` | public, not rate limited | implemented |
 | `GET /users/me` | `CUSTOMER`, `ADMIN` | planned |
 | `GET /users` | `ADMIN` | planned |
@@ -84,6 +84,47 @@ password it answers `200` with `{ accessToken, refreshToken, tokenType: "Bearer"
 - The refresh token is opaque (256 random bits, 43 base64url characters), valid for
   `JWT_REFRESH_TTL_SECONDS`, and shown only in this response: the database stores its SHA-256 hash
   in `refresh_tokens`, together with `users.lastLoginAt`, in one transaction.
+
+### `POST /auth/refresh`
+
+Body `{ "refreshToken" }` (exactly this non-empty string, at most 512 characters). Exchanges a
+valid refresh token for a new pair and answers `200` with the login shape
+`{ accessToken, refreshToken, tokenType: "Bearer", expiresIn }`.
+
+- The token is looked up by its SHA-256 hash. In one transaction, under a per-family lock, it is
+  marked used (`revokedAt`, `replacedBy`) and a new hashed token is stored in the same family.
+  Of two concurrent refreshes with the same token, exactly one succeeds.
+- The access token is built from the user's **current** `roles`, `customerId` and `status`.
+- The new refresh token expires at the earlier of now + `JWT_REFRESH_TTL_SECONDS` and the session
+  limit: the family's login time + `JWT_SESSION_MAX_SECONDS` (default 30 days). After that, the
+  user must log in again.
+- Every token or account failure (unknown, expired, already used or revoked, user not `ACTIVE`,
+  session limit reached) answers the same `401`
+  `{ "message": "invalid refresh token", "error": "Unauthorized", "statusCode": 401 }`.
+  Presenting a used or revoked token is treated as theft: **the whole family is revoked**, including
+  the token the legitimate refresh issued. A user who is no longer `ACTIVE` also has the family
+  revoked.
+- `400` for an invalid body; `429` past `RATE_LIMIT_REFRESH_LIMIT` per client IP within
+  `RATE_LIMIT_REFRESH_TTL_MS`; `5xx` if the database is down (never `401`).
+
+### `POST /auth/logout`
+
+Body `{ "refreshToken" }` (same validation). Answers `204` with no body for every well-formed
+request, whatever the token's state, so the response reveals nothing about it. For a known token
+it revokes every token of its family. `400` for an invalid body; `429` past
+`RATE_LIMIT_LOGOUT_LIMIT` per client IP within `RATE_LIMIT_LOGOUT_TTL_MS`; `5xx` if the database is
+down (never `204`).
+
+### Session trade-offs
+
+- **Access tokens outlive logout.** Access tokens are stateless JWTs: one issued before a logout
+  (or a reuse revocation, or disabling the user) stays valid until its `exp`, at most
+  `JWT_ACCESS_TTL_SECONDS` (15 minutes by default).
+- **Reuse detection is strict, with no grace window.** A client that retries a refresh after
+  losing the first response presents a used token, so the session is revoked and the user must log
+  in again. Clients must not retry a refresh blindly.
+- **Expired and revoked refresh tokens are not purged yet.** They stay in `refresh_tokens`; a purge
+  job is future work.
 
 ### Access token
 
@@ -218,10 +259,15 @@ The RS256 private key is read from `JWT_PRIVATE_KEY_PATH` and is **never committ
 | `RATE_LIMIT_REGISTER_TTL_MS` | `60000` | Length of that window, in ms |
 | `RATE_LIMIT_LOGIN_LIMIT` | `10` | `POST /auth/login` requests allowed per client IP, and per normalized email, per window |
 | `RATE_LIMIT_LOGIN_TTL_MS` | `60000` | Length of that window, in ms |
+| `RATE_LIMIT_REFRESH_LIMIT` | `30` | `POST /auth/refresh` requests allowed per client IP per window |
+| `RATE_LIMIT_REFRESH_TTL_MS` | `60000` | Length of that window, in ms |
+| `RATE_LIMIT_LOGOUT_LIMIT` | `30` | `POST /auth/logout` requests allowed per client IP per window |
+| `RATE_LIMIT_LOGOUT_TTL_MS` | `60000` | Length of that window, in ms |
 | `JWT_ISSUER` | unset, **required** | `iss` claim of access tokens |
 | `JWT_AUDIENCE` | unset, **required** | `aud` claim of access tokens |
 | `JWT_ACCESS_TTL_SECONDS` | `900` | Access token lifetime, in seconds |
 | `JWT_REFRESH_TTL_SECONDS` | `604800` | Refresh token lifetime, in seconds (7 days) |
+| `JWT_SESSION_MAX_SECONDS` | `2592000` | Absolute session lifetime from login, in seconds (30 days); must be at least `JWT_REFRESH_TTL_SECONDS`, otherwise startup fails |
 | `JWT_PRIVATE_KEY_PATH` | unset, **required** | Path of the RS256 private key PEM (e.g. `./keys/private.pem`) |
 | `JWT_RETIRED_PUBLIC_KEY_PATHS` | empty | Comma-separated retired public key PEM paths, published after the active key, in order |
 | `JWKS_CACHE_SECONDS` | `300` | `max-age` of the key set; a non-negative integer, otherwise startup fails |

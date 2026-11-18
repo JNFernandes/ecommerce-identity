@@ -1,10 +1,27 @@
 import { DuplicateEmailError } from '../../../src/domain/errors/duplicate-email.error';
 import { InvalidCredentialsError } from '../../../src/domain/errors/invalid-credentials.error';
+import {
+  InvalidRefreshTokenError,
+  RefreshFailureReason,
+} from '../../../src/domain/errors/invalid-refresh-token.error';
 import { UserValidationError } from '../../../src/domain/errors/user-validation.error';
 import { Role } from '../../../src/domain/role.enum';
 import { UserStatus } from '../../../src/domain/user-status.enum';
 
 describe('domain errors', () => {
+  it.each(Object.values(RefreshFailureReason))(
+    'should use the same fixed message and keep the reason in an InvalidRefreshTokenError for %s',
+    (reason) => {
+      const error = new InvalidRefreshTokenError(reason);
+
+      expect(error).toBeInstanceOf(InvalidRefreshTokenError);
+      expect(error).toBeInstanceOf(Error);
+      expect(error.name).toBe('InvalidRefreshTokenError');
+      expect(error.message).toBe('invalid refresh token');
+      expect(error.reason).toBe(reason);
+    },
+  );
+
   it('should carry the given message in a UserValidationError', () => {
     const error = new UserValidationError('invalid email');
 

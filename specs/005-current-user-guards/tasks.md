@@ -71,7 +71,7 @@ description: "Task list for US-05: Current user endpoint and role-based access g
 
 **Independent Test**: Send each forged, downgraded, expired or malformed token to `GET /users/me` and compare the responses.
 
-- [ ] T013 [US2] Component test `tests/component/access-control.component.spec.ts` (tokens forged in the test with `jose` and the test key pair from `tests/component/support/test-app.ts`): no header, `Basic`, empty Bearer, extra spaces, two tokens, non-JWT value, refresh token as Bearer, `alg: none`, HS256 HMAC-signed with the public key PEM, unknown `kid`, missing `kid`, tampered payload, wrong `iss`, wrong `aud`, `exp` beyond the tolerance, missing `jti`, unknown role → all 401 with `WWW-Authenticate: Bearer` and byte-identical bodies that never contain the token; accepted: lower-case `bearer`, `exp` within the tolerance, a token signed by a retired key published via `useRetiredPublicKeys` (US2-AS5/AS6). Commit `test(US-05): cover the access token rejection matrix`.
+- [X] T013 [US2] Component test `tests/component/access-control.component.spec.ts` (tokens forged in the test with `jose` and the test key pair from `tests/component/support/test-app.ts`): no header, `Basic`, empty Bearer, extra spaces, two tokens, non-JWT value, refresh token as Bearer, `alg: none`, HS256 HMAC-signed with the public key PEM, unknown `kid`, missing `kid`, tampered payload, wrong `iss`, wrong `aud`, `exp` beyond the tolerance, missing `jti`, unknown role → all 401 with `WWW-Authenticate: Bearer` and byte-identical bodies that never contain the token; accepted: lower-case `bearer`, `exp` within the tolerance, a token signed by a retired key published via `useRetiredPublicKeys` (US2-AS5/AS6). Commit `test(US-05): cover the access token rejection matrix`.
 
 ---
 

@@ -51,6 +51,7 @@ import { UserEventPublisher } from './services/ports/user-event-publisher';
 import { UserEventsProducer } from './infra/kafka/user-events.producer';
 import { DEFAULT_JWKS_CACHE_SECONDS, JwksService } from './services/jwks.service';
 import { AdminSeedService } from './services/admin-seed.service';
+import { ListUsersService } from './services/list-users.service';
 import { GetCurrentUserService } from './services/get-current-user.service';
 import { LoginService } from './services/login.service';
 import { LogoutService } from './services/logout.service';
@@ -200,6 +201,7 @@ function createJwksService(publicKeySet: PublicKeySet, configService: ConfigServ
     LogoutService,
     GetCurrentUserService,
     AdminSeedService,
+    ListUsersService,
   ],
 })
 export class AppModule {}

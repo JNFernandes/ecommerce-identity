@@ -9,6 +9,7 @@ import {
   createTestApp,
   startPostgres,
   useAdminSeed,
+  useNewDatabase,
   useUnreachableKafka,
 } from './support/test-app';
 import { loginAs, registerAndLogin } from './support/token-flow';
@@ -114,10 +115,7 @@ describe('admin seed (component)', () => {
 
   it('should seed with ADMIN_NAME while Kafka is unreachable', async () => {
     await app.close();
-    const admin = await postgresAdmin(postgres);
-    await admin.query('CREATE DATABASE "seed_named"');
-    await admin.destroy();
-    process.env.DATABASE_NAME = 'seed_named';
+    await useNewDatabase(postgres, 'seed_named');
     await useUnreachableKafka();
     useAdminSeed({ email: 'root@example.com', password: FIRST_PASSWORD, name: ' Root Admin ' });
 
@@ -129,16 +127,3 @@ describe('admin seed (component)', () => {
     await expect(loginAs(app, 'root@example.com', FIRST_PASSWORD)).resolves.toBeDefined();
   });
 });
-
-/** A connection to the container's default database, for creating another one. */
-async function postgresAdmin(container: StartedPostgreSqlContainer): Promise<DataSource> {
-  const dataSource = new DataSource({
-    type: 'postgres',
-    host: container.getHost(),
-    port: container.getPort(),
-    username: container.getUsername(),
-    password: container.getPassword(),
-    database: container.getDatabase(),
-  });
-  return dataSource.initialize();
-}

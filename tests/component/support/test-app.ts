@@ -6,6 +6,7 @@ import { AddressInfo, createServer } from 'net';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { PostgreSqlContainer, StartedPostgreSqlContainer } from '@testcontainers/postgresql';
+import { DataSource } from 'typeorm';
 import { AppModule } from '../../../src/app.module';
 import { configureApp } from '../../../src/app.setup';
 import { configureSwagger } from '../../../src/app.swagger';
@@ -111,6 +112,33 @@ export async function startPostgres(): Promise<StartedPostgreSqlContainer> {
   process.env.ARGON2_PARALLELISM = '1';
   useTestSigningKey();
   return container;
+}
+
+/**
+ * Creates a new, empty database in the container and points `DATABASE_NAME` at it, so the next app
+ * start migrates and uses an empty schema (e.g. to run the admin seed again from scratch).
+ *
+ * @param container The running PostgreSQL container.
+ * @param name The new database name (unique per container).
+ */
+export async function useNewDatabase(
+  container: StartedPostgreSqlContainer,
+  name: string,
+): Promise<void> {
+  const admin = await new DataSource({
+    type: 'postgres',
+    host: container.getHost(),
+    port: container.getPort(),
+    username: container.getUsername(),
+    password: container.getPassword(),
+    database: container.getDatabase(),
+  }).initialize();
+  try {
+    await admin.query(`CREATE DATABASE "${name}"`);
+  } finally {
+    await admin.destroy();
+  }
+  process.env.DATABASE_NAME = name;
 }
 
 /**

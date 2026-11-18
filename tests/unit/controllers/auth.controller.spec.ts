@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException, UnauthorizedException } from '@nestjs/common';
 import { CommandBus } from '@nestjs/cqrs';
 import { LoginCommand } from '../../../src/commands/login.command';
+import { LogoutCommand } from '../../../src/commands/logout.command';
 import { RefreshCommand } from '../../../src/commands/refresh.command';
 import { RegisterCustomerCommand } from '../../../src/commands/register-customer.command';
 import { AuthController } from '../../../src/controllers/auth.controller';
@@ -189,6 +190,25 @@ describe('AuthController', () => {
       execute.mockRejectedValue(failure);
 
       await expect(controller.refresh(refreshBody, '203.0.113.7')).rejects.toBe(failure);
+    });
+  });
+
+  describe('logout', () => {
+    it('should dispatch a LogoutCommand with the token and the client IP and return nothing', async () => {
+      execute.mockResolvedValue(undefined);
+
+      await expect(
+        controller.logout({ refreshToken: 'opaque-refresh' }, '203.0.113.7'),
+      ).resolves.toBeUndefined();
+
+      expect(execute).toHaveBeenCalledWith(new LogoutCommand('opaque-refresh', '203.0.113.7'));
+    });
+
+    it('should propagate a failure so it never becomes a 204', async () => {
+      const failure = new Error('database down');
+      execute.mockRejectedValue(failure);
+
+      await expect(controller.logout({ refreshToken: 'x' }, '203.0.113.7')).rejects.toBe(failure);
     });
   });
 });

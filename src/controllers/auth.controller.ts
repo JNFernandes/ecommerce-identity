@@ -15,6 +15,7 @@ import {
   ApiBadRequestResponse,
   ApiConflictResponse,
   ApiCreatedResponse,
+  ApiNoContentResponse,
   ApiOkResponse,
   ApiTags,
   ApiTooManyRequestsResponse,
@@ -22,6 +23,7 @@ import {
 } from '@nestjs/swagger';
 import { SkipThrottle, ThrottlerGuard } from '@nestjs/throttler';
 import { LoginCommand } from '../commands/login.command';
+import { LogoutCommand } from '../commands/logout.command';
 import { RefreshCommand } from '../commands/refresh.command';
 import { RegisterCustomerCommand } from '../commands/register-customer.command';
 import { DuplicateEmailError } from '../domain/errors/duplicate-email.error';
@@ -139,6 +141,28 @@ export class AuthController {
       }
       throw error;
     }
+  }
+
+  /**
+   * Ends the session a refresh token belongs to (public; the refresh token is the credential).
+   * Always answers 204 for a well-formed body, whatever the token's state, so the response reveals
+   * nothing about it. Access tokens already issued stay valid until they expire.
+   *
+   * @param body The validated body holding the refresh token.
+   * @param clientIp The client IP (`req.ip`), passed on for logging only.
+   */
+  @Post('logout')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiNoContentResponse({
+    description: 'Session ended (or the token was unknown, expired or already revoked); no body',
+  })
+  @ApiBadRequestResponse({
+    description: 'Malformed body, unknown property, or missing, empty or non-string refreshToken',
+  })
+  async logout(@Body() body: RefreshTokenDto, @Ip() clientIp: string): Promise<void> {
+    await this.commandBus.execute<LogoutCommand, void>(
+      new LogoutCommand(body.refreshToken, clientIp),
+    );
   }
 
   /** Maps domain errors to HTTP errors; anything else is returned unchanged. */

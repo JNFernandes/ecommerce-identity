@@ -1,4 +1,8 @@
 import { DuplicateEmailError } from '../../../src/domain/errors/duplicate-email.error';
+import {
+  AccessTokenFailureReason,
+  InvalidAccessTokenError,
+} from '../../../src/domain/errors/invalid-access-token.error';
 import { InvalidCredentialsError } from '../../../src/domain/errors/invalid-credentials.error';
 import {
   InvalidRefreshTokenError,
@@ -9,6 +13,23 @@ import { Role } from '../../../src/domain/role.enum';
 import { UserStatus } from '../../../src/domain/user-status.enum';
 
 describe('domain errors', () => {
+  it.each(Object.values(AccessTokenFailureReason))(
+    'should use the same fixed message and keep the reason in an InvalidAccessTokenError for %s',
+    (reason) => {
+      const error = new InvalidAccessTokenError(reason);
+
+      expect(error).toBeInstanceOf(InvalidAccessTokenError);
+      expect(error).toBeInstanceOf(Error);
+      expect(error.name).toBe('InvalidAccessTokenError');
+      expect(error.message).toBe('unauthorized');
+      expect(error.reason).toBe(reason);
+    },
+  );
+
+  it('should define the eleven access token failure reasons', () => {
+    expect(Object.values(AccessTokenFailureReason)).toHaveLength(11);
+  });
+
   it.each(Object.values(RefreshFailureReason))(
     'should use the same fixed message and keep the reason in an InvalidRefreshTokenError for %s',
     (reason) => {

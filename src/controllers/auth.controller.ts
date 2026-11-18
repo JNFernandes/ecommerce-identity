@@ -22,13 +22,16 @@ import {
 } from '@nestjs/swagger';
 import { SkipThrottle, ThrottlerGuard } from '@nestjs/throttler';
 import { LoginCommand } from '../commands/login.command';
+import { RefreshCommand } from '../commands/refresh.command';
 import { RegisterCustomerCommand } from '../commands/register-customer.command';
 import { DuplicateEmailError } from '../domain/errors/duplicate-email.error';
 import { InvalidCredentialsError } from '../domain/errors/invalid-credentials.error';
+import { InvalidRefreshTokenError } from '../domain/errors/invalid-refresh-token.error';
 import { UserValidationError } from '../domain/errors/user-validation.error';
 import { User } from '../domain/user.aggregate';
 import { LoginDto } from '../dto/login.dto';
 import { LoginResponseDto } from '../dto/login-response.dto';
+import { RefreshTokenDto } from '../dto/refresh-token.dto';
 import { RegisterDto } from '../dto/register.dto';
 import { RegisterResponseDto } from '../dto/register-response.dto';
 import { LoginResult } from '../services/login.service';
@@ -102,6 +105,39 @@ export class AuthController {
         throw new UnauthorizedException('invalid credentials');
       }
       throw AuthController.toHttpError(error);
+    }
+  }
+
+  /**
+   * Exchanges a refresh token for a new access token and refresh token (public; the refresh token
+   * is the credential). The presented token is single use. Every token or account failure returns
+   * the same 401 body.
+   *
+   * @param body The validated body holding the refresh token.
+   * @param clientIp The client IP (`req.ip`), passed on for logging only.
+   */
+  @Post('refresh')
+  @HttpCode(HttpStatus.OK)
+  @ApiOkResponse({ type: LoginResponseDto, description: 'Session refreshed; new tokens issued' })
+  @ApiBadRequestResponse({
+    description: 'Malformed body, unknown property, or missing, empty or non-string refreshToken',
+  })
+  @ApiUnauthorizedResponse({
+    description:
+      'invalid refresh token (unknown, expired, reused or revoked token, inactive user or ' +
+      'session limit reached, alike); reuse revokes the whole session',
+  })
+  async refresh(@Body() body: RefreshTokenDto, @Ip() clientIp: string): Promise<LoginResponseDto> {
+    try {
+      const result = await this.commandBus.execute<RefreshCommand, LoginResult>(
+        new RefreshCommand(body.refreshToken, clientIp),
+      );
+      return LoginResponseDto.fromResult(result);
+    } catch (error) {
+      if (error instanceof InvalidRefreshTokenError) {
+        throw new UnauthorizedException('invalid refresh token');
+      }
+      throw error;
     }
   }
 

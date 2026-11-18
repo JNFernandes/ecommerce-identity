@@ -29,7 +29,7 @@ description: "Task list for US-04: Refresh the session and log out"
 
 ## Phase 1: Setup (configuration)
 
-- [ ] T001 Add `jwt.sessionMaxSeconds` (`JWT_SESSION_MAX_SECONDS`, default 2592000, parsed with `parseNonNegativeInteger`) with JSDoc in `src/config/configuration.ts`; the loader throws `JWT_SESSION_MAX_SECONDS must be >= JWT_REFRESH_TTL_SECONDS` when it is smaller (R17). Extend `tests/unit/config/configuration.spec.ts`: default, override, negative/non-numeric rejected, smaller than refresh TTL rejected, equal accepted. Commit `feat(US-04): add the absolute session limit setting`.
+- [X] T001 Add `jwt.sessionMaxSeconds` (`JWT_SESSION_MAX_SECONDS`, default 2592000, parsed with `parseNonNegativeInteger`) with JSDoc in `src/config/configuration.ts`; the loader throws `JWT_SESSION_MAX_SECONDS must be >= JWT_REFRESH_TTL_SECONDS` when it is smaller (R17). Extend `tests/unit/config/configuration.spec.ts`: default, override, negative/non-numeric rejected, smaller than refresh TTL rejected, equal accepted. Commit `feat(US-04): add the absolute session limit setting`.
 - [ ] T002 Add `rateLimit.refresh` (`RATE_LIMIT_REFRESH_LIMIT` 30, `RATE_LIMIT_REFRESH_TTL_MS` 60000) and `rateLimit.logout` (`RATE_LIMIT_LOGOUT_LIMIT` 30, `RATE_LIMIT_LOGOUT_TTL_MS` 60000) to `RateLimitConfig` with JSDoc in `src/config/configuration.ts` (R16; same file as T001, so sequential). Extend `tests/unit/config/configuration.spec.ts` (defaults and overrides). Commit `feat(US-04): add refresh and logout rate limit settings`.
 
 ---

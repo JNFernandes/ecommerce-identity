@@ -50,6 +50,12 @@ export interface JwtConfig {
    * (`JWT_RETIRED_PUBLIC_KEY_PATHS`, comma-separated, in order). Empty or unset: none.
    */
   retiredPublicKeyPaths: string[];
+  /**
+   * Absolute session lifetime in seconds, counted from the login that started a refresh token
+   * family (`JWT_SESSION_MAX_SECONDS`, default 2592000 = 30 days). Must be at least
+   * `refreshTtlSeconds`; startup fails otherwise.
+   */
+  sessionMaxSeconds: number;
 }
 
 /** Key set endpoint settings (`JWKS_*`). */
@@ -170,6 +176,36 @@ export function parseNonNegativeInteger(
   return parsed;
 }
 
+/** Default absolute session lifetime: 30 days. */
+export const DEFAULT_SESSION_MAX_SECONDS = 2592000;
+
+/**
+ * Reads the JWT settings and checks that the session limit is not shorter than one refresh token
+ * lifetime.
+ *
+ * @throws Error when `JWT_SESSION_MAX_SECONDS` is invalid or smaller than `JWT_REFRESH_TTL_SECONDS`.
+ */
+function readJwtConfig(): JwtConfig {
+  const refreshTtlSeconds = parseInteger(process.env.JWT_REFRESH_TTL_SECONDS, 604800);
+  const sessionMaxSeconds = parseNonNegativeInteger(
+    process.env.JWT_SESSION_MAX_SECONDS,
+    DEFAULT_SESSION_MAX_SECONDS,
+    'JWT_SESSION_MAX_SECONDS',
+  );
+  if (sessionMaxSeconds < refreshTtlSeconds) {
+    throw new Error('JWT_SESSION_MAX_SECONDS must be >= JWT_REFRESH_TTL_SECONDS');
+  }
+  return {
+    issuer: optional(process.env.JWT_ISSUER),
+    audience: optional(process.env.JWT_AUDIENCE),
+    accessTtlSeconds: parseInteger(process.env.JWT_ACCESS_TTL_SECONDS, 900),
+    privateKeyPath: optional(process.env.JWT_PRIVATE_KEY_PATH),
+    refreshTtlSeconds,
+    retiredPublicKeyPaths: parseList(process.env.JWT_RETIRED_PUBLIC_KEY_PATHS),
+    sessionMaxSeconds,
+  };
+}
+
 /** Reads the whole configuration from environment variables, with local-development defaults. */
 export default (): AppConfig => ({
   port: parseInteger(process.env.PORT, DEFAULT_PORT),
@@ -190,14 +226,7 @@ export default (): AppConfig => ({
     connectionTimeoutMs: parseInteger(process.env.KAFKA_CONNECTION_TIMEOUT_MS, 1000),
     producerRetries: parseInteger(process.env.KAFKA_PRODUCER_RETRIES, 1),
   },
-  jwt: {
-    issuer: optional(process.env.JWT_ISSUER),
-    audience: optional(process.env.JWT_AUDIENCE),
-    accessTtlSeconds: parseInteger(process.env.JWT_ACCESS_TTL_SECONDS, 900),
-    privateKeyPath: optional(process.env.JWT_PRIVATE_KEY_PATH),
-    refreshTtlSeconds: parseInteger(process.env.JWT_REFRESH_TTL_SECONDS, 604800),
-    retiredPublicKeyPaths: parseList(process.env.JWT_RETIRED_PUBLIC_KEY_PATHS),
-  },
+  jwt: readJwtConfig(),
   jwks: {
     cacheSeconds: optional(process.env.JWKS_CACHE_SECONDS),
   },

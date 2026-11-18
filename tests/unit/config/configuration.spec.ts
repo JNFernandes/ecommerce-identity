@@ -20,6 +20,7 @@ const VARIABLES = [
   'JWT_PRIVATE_KEY_PATH',
   'JWT_REFRESH_TTL_SECONDS',
   'JWT_RETIRED_PUBLIC_KEY_PATHS',
+  'JWT_SESSION_MAX_SECONDS',
   'JWKS_CACHE_SECONDS',
   'ARGON2_MEMORY_COST_KIB',
   'ARGON2_TIME_COST',
@@ -83,6 +84,38 @@ describe('configuration', () => {
     process.env.JWT_REFRESH_TTL_SECONDS = '3600';
 
     expect(configuration().jwt.refreshTtlSeconds).toBe(3600);
+  });
+
+  it('should default the absolute session limit to 30 days', () => {
+    expect(configuration().jwt.sessionMaxSeconds).toBe(2592000);
+  });
+
+  it('should read the absolute session limit from the environment', () => {
+    process.env.JWT_SESSION_MAX_SECONDS = '1209600';
+
+    expect(configuration().jwt.sessionMaxSeconds).toBe(1209600);
+  });
+
+  it.each(['-1', 'abc', '1.5'])('should reject a session limit of %p', (raw) => {
+    process.env.JWT_SESSION_MAX_SECONDS = raw;
+
+    expect(() => configuration()).toThrow('JWT_SESSION_MAX_SECONDS must be a non-negative integer');
+  });
+
+  it('should reject a session limit shorter than the refresh token lifetime', () => {
+    process.env.JWT_REFRESH_TTL_SECONDS = '3600';
+    process.env.JWT_SESSION_MAX_SECONDS = '3599';
+
+    expect(() => configuration()).toThrow(
+      'JWT_SESSION_MAX_SECONDS must be >= JWT_REFRESH_TTL_SECONDS',
+    );
+  });
+
+  it('should accept a session limit equal to the refresh token lifetime', () => {
+    process.env.JWT_REFRESH_TTL_SECONDS = '3600';
+    process.env.JWT_SESSION_MAX_SECONDS = '3600';
+
+    expect(configuration().jwt.sessionMaxSeconds).toBe(3600);
   });
 
   it('should default the login rate limit to 10 requests per minute', () => {

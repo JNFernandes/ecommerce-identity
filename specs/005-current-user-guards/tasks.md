@@ -103,7 +103,7 @@ description: "Task list for US-05: Current user endpoint and role-based access g
 
 **Independent Test**: Read `/docs-json` and check security, `x-roles`, 401 and 403 on `/users/me`.
 
-- [ ] T018 [US5] Extend `Roles(...)` in `src/controllers/auth/roles.decorator.ts` with `applyDecorators` adding `ApiBearerAuth()`, `ApiUnauthorizedResponse`, `ApiForbiddenResponse` and `ApiExtension('x-roles', roles)` (R11); confirm `addBearerAuth()` in `src/app.swagger.ts`. Component test `tests/component/swagger-auth.component.spec.ts` on `/docs-json`: a bearer scheme exists, `GET /users/me` has `security` with it, `x-roles: ["CUSTOMER","ADMIN"]`, 401 and 403 responses; register, login and health have no `security`. Commit `feat(US-05): document bearer auth and roles in Swagger`.
+- [X] T018 [US5] Extend `Roles(...)` in `src/controllers/auth/roles.decorator.ts` with `applyDecorators` adding `ApiBearerAuth()`, `ApiUnauthorizedResponse`, `ApiForbiddenResponse` and `ApiExtension('x-roles', roles)` (R11); confirm `addBearerAuth()` in `src/app.swagger.ts`. Component test `tests/component/swagger-auth.component.spec.ts` on `/docs-json`: a bearer scheme exists, `GET /users/me` has `security` with it, `x-roles: ["CUSTOMER","ADMIN"]`, 401 and 403 responses; register, login and health have no `security`. Commit `feat(US-05): document bearer auth and roles in Swagger`.
 
 ---
 

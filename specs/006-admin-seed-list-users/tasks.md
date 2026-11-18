@@ -51,7 +51,7 @@ description: "Task list for US-06: Seed the first administrator and let admins l
 **Independent Test**: Start on an empty database with the variables set, log in, check `roles: ["ADMIN"]` and no `customerId`; restart with another password; the first still works.
 
 - [X] T003 [P] [US1] Add `static registerAdmin(email: Email, name: UserName, passwordHash: string): User` with JSDoc to `src/domain/user.aggregate.ts` (R3): new id, `customerId: null`, `roles: [ADMIN]`, `status: ACTIVE`, `createdAt = updatedAt = now`, `lastLoginAt: null`, **no** domain event. Extend `tests/unit/domain/user.aggregate.spec.ts`: fields as listed, `pullEvents()` (or the existing event accessor) empty, `canLogin()` true. Commit `feat(US-06): add User.registerAdmin`.
-- [ ] T004 [P] [US1] Create the `AdminSeedDecision` enum (`PROCEED`, `CREATE`, `SKIP_ADMIN_EXISTS`, `SKIP_NOT_CONFIGURED`, `SKIP_EMAIL_TAKEN`) and `AdminSeedPolicy` with JSDoc in `src/domain/admin-seed-policy.ts` (R2, data-model steps 1–5). It has two methods:
+- [X] T004 [P] [US1] Create the `AdminSeedDecision` enum (`PROCEED`, `CREATE`, `SKIP_ADMIN_EXISTS`, `SKIP_NOT_CONFIGURED`, `SKIP_EMAIL_TAKEN`) and `AdminSeedPolicy` with JSDoc in `src/domain/admin-seed-policy.ts` (R2, data-model steps 1–5). It has two methods:
   - `precheck({ adminExists, configured })` → `SKIP_ADMIN_EXISTS` / `SKIP_NOT_CONFIGURED` / `PROCEED`;
   - `decide({ emailOwner })` → `SKIP_EMAIL_TAKEN` / `CREATE`.
 

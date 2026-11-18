@@ -58,7 +58,7 @@ description: "Task list for US-04: Refresh the session and log out"
 
 ### Commands
 
-- [ ] T011 [P] Create `RefreshCommand` (`refreshToken`, `clientIp`) in `src/commands/refresh.command.ts` and `LogoutCommand` (`refreshToken`, `clientIp`) in `src/commands/logout.command.ts`, with JSDoc (R1). No tests beyond compilation. Commit `feat(US-04): add refresh and logout commands`.
+- [X] T011 [P] Create `RefreshCommand` (`refreshToken`, `clientIp`) in `src/commands/refresh.command.ts` and `LogoutCommand` (`refreshToken`, `clientIp`) in `src/commands/logout.command.ts`, with JSDoc (R1). No tests beyond compilation. Commit `feat(US-04): add refresh and logout commands`.
 
 **Checkpoint**: domain rules, DTO, transaction and commands ready; build and integration tests green.
 

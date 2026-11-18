@@ -85,7 +85,7 @@ description: "Task list for US-04: Refresh the session and log out"
 **Independent Test**: Refresh once, reuse the original token → 401, then the newest token → 401.
 
 - [X] T015 [US2] Extend `tests/unit/services/refresh.service.spec.ts` for reuse (code from T012; fix if a case fails): a revoked token calls `revokeFamily` then throws `REUSED` and issues nothing; an expired-and-revoked token is `REUSED`; reuse logs a warn `refresh token reuse detected` with `userId`, `familyId`, `ip` and no token or hash (add the warn in `src/services/refresh.service.ts` if missing). Commit `test(US-04): cover refresh token reuse in the handler`.
-- [ ] T016 [US2] Component test `tests/component/refresh-reuse.component.spec.ts`: refresh RT1 → RT2; reuse RT1 → 401 and every row of the family has `revokedAt`; RT2 → 401; 10 parallel refreshes with one fresh token give exactly one 200 and the family ends fully revoked (SC-002, SC-003). Commit `test(US-04): cover reuse detection and concurrent refresh`.
+- [X] T016 [US2] Component test `tests/component/refresh-reuse.component.spec.ts`: refresh RT1 → RT2; reuse RT1 → 401 and every row of the family has `revokedAt`; RT2 → 401; 10 parallel refreshes with one fresh token give exactly one 200 and the family ends fully revoked (SC-002, SC-003). Commit `test(US-04): cover reuse detection and concurrent refresh`.
 
 ---
 

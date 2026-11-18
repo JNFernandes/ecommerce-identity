@@ -6,6 +6,8 @@ import { buildDataSourceOptions } from '../../src/infra/database/typeorm-options
 jest.setTimeout(180_000);
 
 const MIGRATION = 'CreateRefreshTokensAndUserLastLogin20261117140000';
+/** Later migrations, undone first so this one can be reverted. */
+const LATER_MIGRATIONS = ['AddUserListIndexes20261118120000'];
 
 /** Inserts a customer and returns its id. */
 async function insertUser(dataSource: DataSource): Promise<string> {
@@ -123,7 +125,9 @@ describe('refresh tokens and last login migration (integration)', () => {
   });
 
   it('should drop the table and the column on down and re-apply cleanly', async () => {
-    await dataSource.undoLastMigration();
+    for (let undone = 0; undone <= LATER_MIGRATIONS.length; undone += 1) {
+      await dataSource.undoLastMigration();
+    }
 
     const tables: unknown[] = await dataSource.query(
       `SELECT 1 FROM information_schema.tables WHERE table_name = 'refresh_tokens'`,
@@ -132,6 +136,6 @@ describe('refresh tokens and last login migration (integration)', () => {
     expect(await hasLastLoginAt(dataSource)).toBe(false);
 
     const applied = await dataSource.runMigrations();
-    expect(applied.map((migration) => migration.name)).toEqual([MIGRATION]);
+    expect(applied.map((migration) => migration.name)).toEqual([MIGRATION, ...LATER_MIGRATIONS]);
   });
 });

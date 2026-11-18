@@ -38,7 +38,7 @@ description: "Task list for US-06: Seed the first administrator and let admins l
 
 **Purpose**: Indexes for ordered paging and the email prefix (needed by US3/US4 and SC-006).
 
-- [ ] T002 Create migration `AddUserListIndexes20261118120000` in `src/infra/database/migrations/20261118120000-AddUserListIndexes.ts` (R13): `up` creates `IDX_users_created_at_id` on `("createdAt" DESC, "id" DESC)` and `IDX_users_email_lower_prefix` on `(lower("email") text_pattern_ops)`; `down` drops both; JSDoc. Integration test `tests/integration/user-list-indexes-migration.integration.spec.ts` (pattern of `users-migration.integration.spec.ts`): both indexes exist after `up` with the expected definitions (`pg_indexes`), both gone after `down`. Commit `feat(US-06): add indexes for listing users`.
+- [X] T002 Create migration `AddUserListIndexes20261118120000` in `src/infra/database/migrations/20261118120000-AddUserListIndexes.ts` (R13): `up` creates `IDX_users_created_at_id` on `("createdAt" DESC, "id" DESC)` and `IDX_users_email_lower_prefix` on `(lower("email") text_pattern_ops)`; `down` drops both; JSDoc. Integration test `tests/integration/user-list-indexes-migration.integration.spec.ts` (pattern of `users-migration.integration.spec.ts`): both indexes exist after `up` with the expected definitions (`pg_indexes`), both gone after `down`. Commit `feat(US-06): add indexes for listing users`.
 
 **Checkpoint**: Schema ready; no behaviour change.
 

@@ -8,20 +8,19 @@ The rules for this repository are in the constitution,
 [`.specify/memory/constitution.md`](.specify/memory/constitution.md). The shared event contracts
 are in `ecommerce-infra/docs/events.md`, which is the source of truth.
 
-> **Status: in progress.** US-01 (customer registration) and US-02 (login with email and password)
-> are implemented on top of the project skeleton, migrations, lazy Kafka producer, health check and
-> Swagger. Everything marked
-> **planned** below is set by the constitution but not built yet.
+> **Status: in progress.** US-01 to US-05 are implemented: customer registration, login, the JWKS
+> endpoint with key rotation, refresh and logout, and `GET /users/me` with default-deny role guards.
+> Everything marked **planned** below is set by the constitution but not built yet.
 
 > **HTTPS is required outside local development.** This service receives passwords and issues
 > tokens; never expose it over plain HTTP except on `localhost`.
 
-## Roles (planned)
+## Roles
 
 | Role | How it is created | `customerId` |
 |---|---|---|
 | `CUSTOMER` | Public registration (`POST /auth/register`) | New, generated at registration |
-| `ADMIN` | Only by a startup seed from `ADMIN_EMAIL` / `ADMIN_PASSWORD` when no admin exists | None |
+| `ADMIN` | Only by a startup seed from `ADMIN_EMAIL` / `ADMIN_PASSWORD` when no admin exists (the seed is planned) | None |
 
 No endpoint can change a user's role ([ADR 0003](docs/adr/0003-admin-seed-and-no-role-change.md)).
 
@@ -36,9 +35,14 @@ No endpoint can change a user's role ([ADR 0003](docs/adr/0003-admin-seed-and-no
 | `POST /auth/refresh` | public (refresh token), rate limited per IP | implemented |
 | `POST /auth/logout` | public (refresh token), rate limited per IP | implemented |
 | `GET` / `HEAD /.well-known/jwks.json` | public, not rate limited | implemented |
-| `GET /users/me` | `CUSTOMER`, `ADMIN` | planned |
+| `GET /users/me` | `CUSTOMER`, `ADMIN` | implemented |
 | `GET /users` | `ADMIN` | planned |
 | `PATCH /users/{id}/status` | `ADMIN` | planned |
+
+`GET /users/me` returns the caller's account as stored now:
+`{ "id", "customerId", "email", "name", "roles", "status", "createdAt" }`. `customerId` is left out
+entirely for admins; no password, hash or token is ever returned. A user deleted or disabled after
+login gets the same `401` as an invalid token. It reads PostgreSQL only and works with Kafka down.
 
 `GET /health` returns `200` with `{ "status": "ok", "database": "up", "kafka": "idle" }` when
 PostgreSQL answers, and `503` when it does not. The `kafka` field (`idle`, `connected`,
@@ -152,6 +156,37 @@ Implemented and tested by `tests/support/reference-verifier.ts`
 5. Unknown `kid`: refetch the key set **at most once per minute** (counted from the previous
    refetch; the initial load does not count). Still unknown: reject.
 6. Take `sub`, `customerId` and `roles` only from the verified token.
+
+## Access control
+
+Every route is **denied by default**. A route is reachable only when it declares exactly one policy:
+
+- `@Public()`: no token is read; any `Authorization` header is ignored (register, login, refresh,
+  logout, JWKS, health). `/docs` and `/docs-json` are served outside Nest routing and stay public.
+- `@Roles(...)`: the caller must send a valid access token and hold one of the listed roles.
+
+A route with neither, both, or an empty `@Roles()` **stops the service at startup** with
+`route policy violation: <Controller>.<handler> (<METHOD> <path>), …`. `@Roles` also documents the
+bearer scheme, the roles (`x-roles`), 401 and 403 in Swagger.
+
+Call a protected route with the access token from login or refresh:
+
+```bash
+curl -H "Authorization: Bearer <accessToken>" http://localhost:3001/users/me
+```
+
+The service verifies its own tokens locally (no network call): RS256 only, `kid` from the published
+key set (active or retired), signature, `iss`, `aud`, `exp`/`iat`/`nbf` with
+`JWT_CLOCK_TOLERANCE_SECONDS` of skew, and the `sub`, `iat`, `exp`, `jti` and `roles` claims.
+
+| Outcome | Status | Body |
+|---|---|---|
+| Missing, malformed, untrusted or expired token, or the user is no longer active | `401` + `WWW-Authenticate: Bearer` | `{"statusCode":401,"message":"unauthorized","error":"Unauthorized"}`, byte-identical for every cause |
+| Valid token, but none of the route's roles | `403` | `{"statusCode":403,"message":"forbidden","error":"Forbidden"}` |
+
+The failure reason is logged at `warn`; tokens and `Authorization` values never are. Access tokens
+are not revoked by logout: they stay valid until they expire (15 minutes by default). See
+[ADR 0005](docs/adr/0005-default-deny-route-guards.md).
 
 ## Events
 
@@ -268,6 +303,7 @@ The RS256 private key is read from `JWT_PRIVATE_KEY_PATH` and is **never committ
 | `JWT_ACCESS_TTL_SECONDS` | `900` | Access token lifetime, in seconds |
 | `JWT_REFRESH_TTL_SECONDS` | `604800` | Refresh token lifetime, in seconds (7 days) |
 | `JWT_SESSION_MAX_SECONDS` | `2592000` | Absolute session lifetime from login, in seconds (30 days); must be at least `JWT_REFRESH_TTL_SECONDS`, otherwise startup fails |
+| `JWT_CLOCK_TOLERANCE_SECONDS` | `5` | Clock skew, in seconds, allowed when verifying `exp`, `iat` and `nbf` on protected routes; a non-negative integer, otherwise startup fails |
 | `JWT_PRIVATE_KEY_PATH` | unset, **required** | Path of the RS256 private key PEM (e.g. `./keys/private.pem`) |
 | `JWT_RETIRED_PUBLIC_KEY_PATHS` | empty | Comma-separated retired public key PEM paths, published after the active key, in order |
 | `JWKS_CACHE_SECONDS` | `300` | `max-age` of the key set; a non-negative integer, otherwise startup fails |

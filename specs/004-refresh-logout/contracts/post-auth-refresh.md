@@ -18,7 +18,7 @@ The body has exactly one field: a non-empty string of at most 512 characters. An
 |---|---|---|
 | 200 | The token is known, unused, unrevoked and unexpired; the user is `ACTIVE`; the session is within `JWT_SESSION_MAX_SECONDS` | `LoginResponseDto`: exactly `accessToken`, `refreshToken`, `tokenType: "Bearer"`, `expiresIn` |
 | 400 | The body is invalid (see above) | Nest validation error body |
-| 401 | The token is unknown, expired or reused/revoked, the user is not `ACTIVE`, or the session limit has passed | **always** `{ "statusCode": 401, "message": "invalid refresh token", "error": "Unauthorized" }` |
+| 401 | The token is unknown, expired or reused/revoked, the user is not `ACTIVE`, or the session limit has passed | **always** the byte-identical `{"message":"invalid refresh token","error":"Unauthorized","statusCode":401}` |
 | 429 | More than `RATE_LIMIT_REFRESH_LIMIT` requests from one IP within `RATE_LIMIT_REFRESH_TTL_MS` | Throttler error body |
 | 5xx | The database is unavailable | Nest error body; never a 401, no token issued |
 

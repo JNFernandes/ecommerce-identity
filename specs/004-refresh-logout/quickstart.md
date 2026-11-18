@@ -57,3 +57,14 @@ The component tests cover:
 - 429 past the rate limit;
 - no token in the captured logs;
 - refresh and logout working while Kafka is unreachable.
+
+## Result (2026-11-18, run by hand against `node dist/main.js`, local ecommerce-infra Postgres, Kafka not running)
+
+- **Steps 1–2**: refresh → 200 with exactly the four login fields; new access token verifies through `GET /.well-known/jwks.json`, new `jti`. ✅
+- **Step 3**: reuse RT1 → 401, then RT2 → 401; bodies identical `{"message":"invalid refresh token","error":"Unauthorized","statusCode":401}`. Storage: every family row has `revokedAt`, RT1's `replacedBy` = RT2's id. ✅
+- **Step 4**: logout (fresh login) → 204 empty body; refresh with that token → 401; logout `unknown` → 204. ✅
+- **Step 5**: unknown property → 400. ✅
+- **Session limit** (`JWT_SESSION_MAX_SECONDS=60`, `JWT_REFRESH_TTL_SECONDS=60`): new token `expiresAt` = login + 60 s; refresh after 62 s → 401. `JWT_SESSION_MAX_SECONDS=59` with TTL 60 → startup exit 1 with `JWT_SESSION_MAX_SECONDS must be >= JWT_REFRESH_TTL_SECONDS`. ✅
+- **Rate limit**: the 31st refresh within a minute → 429. ✅
+- **Logs**: `refresh succeeded`, `refresh token reuse detected`, `refresh refused: reason=REUSED` with ids and IP only; no token or hash in the log. Kafka was down throughout; refresh and logout were unaffected. ✅
+

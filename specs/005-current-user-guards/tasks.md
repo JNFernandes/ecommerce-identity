@@ -115,7 +115,7 @@ description: "Task list for US-05: Current user endpoint and role-based access g
 - [X] T022 [P] Add `JWT_CLOCK_TOLERANCE_SECONDS=5` with a comment to `.env.example` (FR-006). Commit `docs(US-05): add the clock tolerance setting to .env.example`.
 - [X] T023 [P] Write `docs/adr/0005-default-deny-route-guards.md` from `docs/adr/template.md` (local verification over the key ring, global guards with default deny and the startup check, no `jti` blacklist; rejected: per-route `@UseGuards`, public path list) and index it in `docs/adr/README.md` (R18). Commit `docs(US-05): add ADR 0005 default deny route guards`.
 - [X] T024 [P] Update `src/README.md` with `GET /users/me`, `GetCurrentUserService`, the guards, filter, decorators, `RoutePolicyCheck` and `JoseAccessTokenVerifier`. Commit `docs(US-05): list guards and GET /users/me in the module README`.
-- [ ] T025 Run `specs/005-current-user-guards/quickstart.md` manually against `npm run start:dev` and record the results (date, pass/fail per step) at the end of the quickstart. Commit `docs(US-05): record the manual quickstart run`.
+- [X] T025 Run `specs/005-current-user-guards/quickstart.md` manually against `npm run start:dev` and record the results (date, pass/fail per step) at the end of the quickstart. Commit `docs(US-05): record the manual quickstart run`.
 
 ---
 

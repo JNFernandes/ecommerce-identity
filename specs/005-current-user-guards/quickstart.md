@@ -44,3 +44,12 @@ npm run test:component -- users-me access-control
 ```
 
 These cover the verifier attack cases (none, HS256 with the public key, unknown `kid`, retired key), the route policy over every `AppModule` route, 401 for a disabled or deleted user, 403 on the test-only `ADMIN` route, and no tokens in the captured logs.
+
+## Result (2026-11-18, run by hand against `node dist/main.js`, local ecommerce-infra Postgres and Kafka)
+
+- **Step 1**: register → 201; login; `GET /users/me` → 200 with exactly `id`, `customerId`, `email`, `name`, `roles: ["CUSTOMER"]`, `status: "ACTIVE"`, `createdAt`; no password field. ✅
+- **Step 2**: no header, `Basic $TOKEN` and `Bearer ${TOKEN}x` → 401 with `WWW-Authenticate: Bearer` and the identical body `{"statusCode":401,"message":"unauthorized","error":"Unauthorized"}`; lower-case `bearer` → 200. ✅
+- **Step 3**: without a token, `/health` 200, JWKS 200, refresh 200 (the four login fields), logout 204, `/docs` 200. ✅
+- **Step 4**: `/docs-json` → `GET /users/me` has `security: [{ bearer: [] }]`, `x-roles: ["CUSTOMER","ADMIN"]`, responses 200/401/403; scheme `bearer` declared. ✅
+- **Step 5**: unit (4 suites, 49 tests) and component (`users-me`, `access-control`: 29 tests) pass. ✅
+- **Logs**: three `warn` lines `access token refused: reason=MISSING_HEADER | MALFORMED_HEADER | INVALID_SIGNATURE`; the access token appears nowhere in the log. ✅

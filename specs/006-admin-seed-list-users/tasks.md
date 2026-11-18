@@ -137,7 +137,7 @@ description: "Task list for US-06: Seed the first administrator and let admins l
 
 ## Phase 8: Polish & cross-cutting
 
-- [ ] T024 [P] Component test `tests/component/users-admin-kafka-unavailable.component.spec.ts`: with `useUnreachableKafka()`, the seeded admin logs in and `GET /users` and `GET /users/{id}` return 200. Commit `test(US-06): cover the admin endpoints with Kafka unreachable`.
+- [X] T024 [P] Component test `tests/component/users-admin-kafka-unavailable.component.spec.ts`: with `useUnreachableKafka()`, the seeded admin logs in and `GET /users` and `GET /users/{id}` return 200. Commit `test(US-06): cover the admin endpoints with Kafka unreachable`.
 - [ ] T025 [P] Integration test `tests/integration/user-list-performance.integration.spec.ts`: insert 10,000 users in bulk, `findPage` with an email prefix filter and with no filter each completes in under 1 s (SC-006). Commit `test(US-06): check user listing stays fast with 10k users`.
 - [ ] T026 [P] Update `README.md`: "Admin seed" section (the three variables, the behaviour table from contracts/admin-seed.md, recommend removing `ADMIN_PASSWORD` after the first start), `GET /users` and `GET /users/{id}` under Endpoints and in the access control table, `ADMIN_*` in the environment table (FR-018). Commit `docs(US-06): document the admin seed and user endpoints`.
 - [ ] T027 [P] Add commented-out `ADMIN_EMAIL`, `ADMIN_PASSWORD` and `ADMIN_NAME` with a short comment to `.env.example` (FR-018). Commit `docs(US-06): add the admin seed variables to .env.example`.

@@ -56,6 +56,11 @@ export interface JwtConfig {
    * `refreshTtlSeconds`; startup fails otherwise.
    */
   sessionMaxSeconds: number;
+  /**
+   * Clock skew in seconds allowed when verifying `exp`, `iat` and `nbf` of an access token
+   * (`JWT_CLOCK_TOLERANCE_SECONDS`, default 5). A non-integer or negative value fails startup.
+   */
+  clockToleranceSeconds: number;
 }
 
 /** Key set endpoint settings (`JWKS_*`). */
@@ -189,6 +194,9 @@ export function parseNonNegativeInteger(
 /** Default absolute session lifetime: 30 days. */
 export const DEFAULT_SESSION_MAX_SECONDS = 2592000;
 
+/** Default clock skew allowed when verifying access tokens: 5 seconds. */
+export const DEFAULT_CLOCK_TOLERANCE_SECONDS = 5;
+
 /**
  * Reads the JWT settings and checks that the session limit is not shorter than one refresh token
  * lifetime.
@@ -213,6 +221,11 @@ function readJwtConfig(): JwtConfig {
     refreshTtlSeconds,
     retiredPublicKeyPaths: parseList(process.env.JWT_RETIRED_PUBLIC_KEY_PATHS),
     sessionMaxSeconds,
+    clockToleranceSeconds: parseNonNegativeInteger(
+      process.env.JWT_CLOCK_TOLERANCE_SECONDS,
+      DEFAULT_CLOCK_TOLERANCE_SECONDS,
+      'JWT_CLOCK_TOLERANCE_SECONDS',
+    ),
   };
 }
 

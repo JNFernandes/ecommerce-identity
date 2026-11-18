@@ -21,6 +21,7 @@ const VARIABLES = [
   'JWT_REFRESH_TTL_SECONDS',
   'JWT_RETIRED_PUBLIC_KEY_PATHS',
   'JWT_SESSION_MAX_SECONDS',
+  'JWT_CLOCK_TOLERANCE_SECONDS',
   'JWKS_CACHE_SECONDS',
   'ARGON2_MEMORY_COST_KIB',
   'ARGON2_TIME_COST',
@@ -120,6 +121,27 @@ describe('configuration', () => {
     process.env.JWT_SESSION_MAX_SECONDS = '3600';
 
     expect(configuration().jwt.sessionMaxSeconds).toBe(3600);
+  });
+
+  it('should default the access token clock tolerance to 5 seconds', () => {
+    expect(configuration().jwt.clockToleranceSeconds).toBe(5);
+  });
+
+  it.each([
+    ['30', 30],
+    ['0', 0],
+  ])('should read a clock tolerance of %p from the environment', (raw, expected) => {
+    process.env.JWT_CLOCK_TOLERANCE_SECONDS = raw;
+
+    expect(configuration().jwt.clockToleranceSeconds).toBe(expected);
+  });
+
+  it.each(['-1', 'abc', '2.5'])('should reject a clock tolerance of %p', (raw) => {
+    process.env.JWT_CLOCK_TOLERANCE_SECONDS = raw;
+
+    expect(() => configuration()).toThrow(
+      'JWT_CLOCK_TOLERANCE_SECONDS must be a non-negative integer',
+    );
   });
 
   it('should default the login rate limit to 10 requests per minute', () => {

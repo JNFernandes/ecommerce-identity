@@ -30,7 +30,7 @@ description: "Task list for US-05: Current user endpoint and role-based access g
 
 ## Phase 1: Setup (configuration)
 
-- [ ] T001 Add `jwt.clockToleranceSeconds` (`JWT_CLOCK_TOLERANCE_SECONDS`, default 5, parsed with `parseNonNegativeInteger`) with JSDoc to `JwtConfig` in `src/config/configuration.ts` (R15). Extend `tests/unit/config/configuration.spec.ts`: default 5, override, `0` accepted, negative and non-numeric rejected. Commit `feat(US-05): add the JWT clock tolerance setting`.
+- [X] T001 Add `jwt.clockToleranceSeconds` (`JWT_CLOCK_TOLERANCE_SECONDS`, default 5, parsed with `parseNonNegativeInteger`) with JSDoc to `JwtConfig` in `src/config/configuration.ts` (R15). Extend `tests/unit/config/configuration.spec.ts`: default 5, override, `0` accepted, negative and non-numeric rejected. Commit `feat(US-05): add the JWT clock tolerance setting`.
 
 ---
 

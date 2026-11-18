@@ -7,6 +7,8 @@ import { Role } from '../domain/role.enum';
 import { User } from '../domain/user.aggregate';
 import { UserName } from '../domain/user-name.value-object';
 import { UserEntity } from '../infra/database/entities/user.entity';
+import { ListUsersQuery } from '../queries/list-users.query';
+import { UserPageReadModel, UserSummaryReadModel } from '../queries/user-summary.read-model';
 import { isUniqueViolation } from './errors/is-unique-violation';
 
 /**
@@ -78,6 +80,55 @@ export class UserRepository {
     return row !== undefined && row !== null;
   }
 
+  /**
+   * Reads one page of users matching every given filter (AND), newest first: `createdAt`
+   * descending, then `id` descending so equal creation times keep a stable order across pages.
+   *
+   * @param query Page size, offset and optional role, status and email prefix filters. The email
+   * prefix is compared case-insensitively and literally (`\`, `%` and `_` are escaped).
+   * @returns The page and the number of users matching the filters, ignoring paging.
+   */
+  async findPage(query: ListUsersQuery): Promise<UserPageReadModel> {
+    const builder = this.repository.createQueryBuilder('user');
+    if (query.role !== undefined) {
+      builder.andWhere(':role::user_role_enum = ANY(user.roles)', { role: query.role });
+    }
+    if (query.status !== undefined) {
+      builder.andWhere('user.status = :status', { status: query.status });
+    }
+    if (query.emailPrefix !== undefined) {
+      builder.andWhere(`lower(user.email) LIKE :prefix ESCAPE '\\'`, {
+        prefix: `${escapeLike(query.emailPrefix.toLowerCase())}%`,
+      });
+    }
+    const [entities, total] = await builder
+      .orderBy('user.createdAt', 'DESC')
+      .addOrderBy('user.id', 'DESC')
+      .offset(query.offset)
+      .limit(query.limit)
+      .getManyAndCount();
+    return {
+      items: entities.map((entity) => UserRepository.toSummary(entity)),
+      total,
+      limit: query.limit,
+      offset: query.offset,
+    };
+  }
+
+  /** Maps a stored row to the admin read model; the hash and `updatedAt` are left out. */
+  private static toSummary(entity: UserEntity): UserSummaryReadModel {
+    return {
+      id: entity.id,
+      customerId: entity.customerId,
+      email: entity.email,
+      name: entity.name,
+      roles: [...entity.roles],
+      status: entity.status,
+      createdAt: entity.createdAt,
+      lastLoginAt: entity.lastLoginAt,
+    };
+  }
+
   private static toEntity(user: User): UserEntity {
     const entity = new UserEntity();
     entity.id = user.id;
@@ -113,4 +164,9 @@ export class UserRepository {
       lastLoginAt: entity.lastLoginAt,
     });
   }
+}
+
+/** Escapes the `LIKE` wildcards `%` and `_` and the escape character `\` itself. */
+function escapeLike(value: string): string {
+  return value.replace(/[\\%_]/g, (character) => `\\${character}`);
 }

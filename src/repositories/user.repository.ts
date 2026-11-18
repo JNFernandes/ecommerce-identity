@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Email } from '../domain/email.value-object';
 import { DuplicateEmailError } from '../domain/errors/duplicate-email.error';
+import { Role } from '../domain/role.enum';
 import { User } from '../domain/user.aggregate';
 import { UserName } from '../domain/user-name.value-object';
 import { UserEntity } from '../infra/database/entities/user.entity';
@@ -60,6 +61,21 @@ export class UserRepository {
       .where('lower(user.email) = :email', { email: normalized })
       .getOne();
     return entity === null ? null : UserRepository.toDomain(entity);
+  }
+
+  /**
+   * Tells whether any user holds the role, whatever its status.
+   *
+   * @param role The role to look for.
+   */
+  async existsWithRole(role: Role): Promise<boolean> {
+    const row = await this.repository
+      .createQueryBuilder('user')
+      .select('1')
+      .where(':role::user_role_enum = ANY(user.roles)', { role })
+      .limit(1)
+      .getRawOne<unknown>();
+    return row !== undefined && row !== null;
   }
 
   private static toEntity(user: User): UserEntity {

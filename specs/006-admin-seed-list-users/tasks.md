@@ -56,7 +56,7 @@ description: "Task list for US-06: Seed the first administrator and let admins l
   - `decide({ emailOwner })` → `SKIP_EMAIL_TAKEN` / `CREATE`.
 
   Tests in `tests/unit/domain/admin-seed-policy.spec.ts`: each decision; `adminExists` wins over not configured. Commit `feat(US-06): add AdminSeedPolicy`.
-- [ ] T005 [P] [US1] Add `existsWithRole(role: Role): Promise<boolean>` with JSDoc to `src/repositories/user.repository.ts` (R5: `:role = ANY(roles)`, `LIMIT 1`, any status). Extend `tests/integration/user.repository.integration.spec.ts`: empty table → false; only customers → false for `ADMIN`; an `ACTIVE` admin → true; a `DISABLED` admin → true. Commit `feat(US-06): add UserRepository.existsWithRole`.
+- [X] T005 [P] [US1] Add `existsWithRole(role: Role): Promise<boolean>` with JSDoc to `src/repositories/user.repository.ts` (R5: `:role = ANY(roles)`, `LIMIT 1`, any status). Extend `tests/integration/user.repository.integration.spec.ts`: empty table → false; only customers → false for `ADMIN`; an `ACTIVE` admin → true; a `DISABLED` admin → true. Commit `feat(US-06): add UserRepository.existsWithRole`.
 - [ ] T006 [US1] Create `AdminSeedService implements OnApplicationBootstrap` with JSDoc in `src/services/admin-seed.service.ts` (R1, R2, R4, R8; depends on T001, T003–T005). It covers the create, admin-exists and not-configured paths; the not-configured path must be included here because every existing component test starts without `ADMIN_*` and must keep starting. The sequence:
   1. read the `admin` config;
   2. call `existsWithRole(ADMIN)`;

@@ -2,8 +2,10 @@ import { DataSource } from 'typeorm';
 import { PostgreSqlContainer, StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import { Email } from '../../src/domain/email.value-object';
 import { DuplicateEmailError } from '../../src/domain/errors/duplicate-email.error';
+import { Role } from '../../src/domain/role.enum';
 import { User } from '../../src/domain/user.aggregate';
 import { UserName } from '../../src/domain/user-name.value-object';
+import { UserStatus } from '../../src/domain/user-status.enum';
 import { UserEntity } from '../../src/infra/database/entities/user.entity';
 import { buildDataSourceOptions } from '../../src/infra/database/typeorm-options';
 import { UserRepository } from '../../src/repositories/user.repository';
@@ -13,6 +15,27 @@ jest.setTimeout(180_000);
 /** Builds a new customer with the given email. */
 function customer(email: string): User {
   return User.registerCustomer(Email.create(email), UserName.create('Ana'), '$argon2id$hash');
+}
+
+/** Builds an admin with the given email and status. */
+function admin(email: string, status: UserStatus = UserStatus.ACTIVE): User {
+  const seeded = User.registerAdmin(
+    Email.create(email),
+    UserName.create('Admin'),
+    '$argon2id$hash',
+  );
+  return User.restore({
+    id: seeded.id,
+    customerId: null,
+    email: seeded.email,
+    name: seeded.name,
+    passwordHash: seeded.passwordHash,
+    roles: seeded.roles,
+    status,
+    createdAt: seeded.createdAt,
+    updatedAt: seeded.updatedAt,
+    lastLoginAt: null,
+  });
 }
 
 describe('UserRepository (integration)', () => {
@@ -132,5 +155,34 @@ describe('UserRepository (integration)', () => {
     });
 
     await expect(repository.save(upperCase)).rejects.toBeInstanceOf(DuplicateEmailError);
+  });
+
+  describe('existsWithRole', () => {
+    beforeEach(async () => {
+      await dataSource.query('DELETE FROM "users"');
+    });
+
+    it('should return false on an empty table', async () => {
+      expect(await repository.existsWithRole(Role.ADMIN)).toBe(false);
+    });
+
+    it('should return false for ADMIN when only customers exist', async () => {
+      await repository.save(customer('only-customer@example.com'));
+
+      expect(await repository.existsWithRole(Role.ADMIN)).toBe(false);
+      expect(await repository.existsWithRole(Role.CUSTOMER)).toBe(true);
+    });
+
+    it('should return true when an ACTIVE admin exists', async () => {
+      await repository.save(admin('active-admin@example.com'));
+
+      expect(await repository.existsWithRole(Role.ADMIN)).toBe(true);
+    });
+
+    it('should return true when only a DISABLED admin exists', async () => {
+      await repository.save(admin('disabled-admin@example.com', UserStatus.DISABLED));
+
+      expect(await repository.existsWithRole(Role.ADMIN)).toBe(true);
+    });
   });
 });

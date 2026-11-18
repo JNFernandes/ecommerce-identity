@@ -131,7 +131,7 @@ description: "Task list for US-06: Seed the first administrator and let admins l
 **Independent Test**: Call both endpoints with no token, an invalid token, a customer token and an admin token.
 
 - [X] T022 [US5] Component test `tests/component/users-admin-access.component.spec.ts`: no token and `Bearer invalid` → generic US-05 401 (`WWW-Authenticate: Bearer`) on `GET /users` and `GET /users/{id}`; customer token → 403 generic body, no user data; admin → 200; admin with `limit=0`, `limit=101`, `offset=-1`, `limit=abc`, `role=ROOT`, `status=GONE`, `foo=1`, 255-char `email` → 400 with `message` as a string list (FR-015, SC-007). Commit `test(US-06): cover admin-only access and parameter validation`.
-- [ ] T023 [US5] Extend `tests/component/swagger-auth.component.spec.ts` on `/docs-json`: `GET /users` and `GET /users/{id}` have bearer `security`, `x-roles: ["ADMIN"]`, 400/401/403 responses (and 404 on `{id}`), the `limit`/`offset`/`role`/`status`/`email` parameters with enums and bounds, and the `UserPageResponseDto`/`UserSummaryResponseDto` schemas without `password`/`passwordHash` (FR-019). Commit `test(US-06): cover the Swagger docs of the user endpoints`.
+- [X] T023 [US5] Extend `tests/component/swagger-auth.component.spec.ts` on `/docs-json`: `GET /users` and `GET /users/{id}` have bearer `security`, `x-roles: ["ADMIN"]`, 400/401/403 responses (and 404 on `{id}`), the `limit`/`offset`/`role`/`status`/`email` parameters with enums and bounds, and the `UserPageResponseDto`/`UserSummaryResponseDto` schemas without `password`/`passwordHash` (FR-019). Commit `test(US-06): cover the Swagger docs of the user endpoints`.
 
 ---
 

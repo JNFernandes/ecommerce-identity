@@ -97,6 +97,16 @@ export interface RateLimitConfig {
    * (`RATE_LIMIT_LOGIN_LIMIT`, default 10; `RATE_LIMIT_LOGIN_TTL_MS`, default 60000).
    */
   login: RateLimitRule;
+  /**
+   * `POST /auth/refresh`, per client IP (`RATE_LIMIT_REFRESH_LIMIT`, default 30;
+   * `RATE_LIMIT_REFRESH_TTL_MS`, default 60000).
+   */
+  refresh: RateLimitRule;
+  /**
+   * `POST /auth/logout`, per client IP (`RATE_LIMIT_LOGOUT_LIMIT`, default 30;
+   * `RATE_LIMIT_LOGOUT_TTL_MS`, default 60000).
+   */
+  logout: RateLimitRule;
 }
 
 /** Cross-origin settings. */
@@ -243,6 +253,14 @@ export default (): AppConfig => ({
     login: {
       limit: parseInteger(process.env.RATE_LIMIT_LOGIN_LIMIT, 10),
       ttlMs: parseInteger(process.env.RATE_LIMIT_LOGIN_TTL_MS, 60000),
+    },
+    refresh: {
+      limit: parseInteger(process.env.RATE_LIMIT_REFRESH_LIMIT, 30),
+      ttlMs: parseInteger(process.env.RATE_LIMIT_REFRESH_TTL_MS, 60000),
+    },
+    logout: {
+      limit: parseInteger(process.env.RATE_LIMIT_LOGOUT_LIMIT, 30),
+      ttlMs: parseInteger(process.env.RATE_LIMIT_LOGOUT_TTL_MS, 60000),
     },
   },
 });

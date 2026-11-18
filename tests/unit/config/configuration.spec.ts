@@ -29,6 +29,10 @@ const VARIABLES = [
   'RATE_LIMIT_REGISTER_TTL_MS',
   'RATE_LIMIT_LOGIN_LIMIT',
   'RATE_LIMIT_LOGIN_TTL_MS',
+  'RATE_LIMIT_REFRESH_LIMIT',
+  'RATE_LIMIT_REFRESH_TTL_MS',
+  'RATE_LIMIT_LOGOUT_LIMIT',
+  'RATE_LIMIT_LOGOUT_TTL_MS',
 ];
 
 describe('configuration', () => {
@@ -127,6 +131,25 @@ describe('configuration', () => {
     process.env.RATE_LIMIT_LOGIN_TTL_MS = '2000';
 
     expect(configuration().rateLimit.login).toEqual({ limit: 3, ttlMs: 2000 });
+  });
+
+  it('should default the refresh and logout rate limits to 30 requests per minute', () => {
+    const { rateLimit } = configuration();
+
+    expect(rateLimit.refresh).toEqual({ limit: 30, ttlMs: 60000 });
+    expect(rateLimit.logout).toEqual({ limit: 30, ttlMs: 60000 });
+  });
+
+  it('should read the refresh and logout rate limits from the environment', () => {
+    process.env.RATE_LIMIT_REFRESH_LIMIT = '7';
+    process.env.RATE_LIMIT_REFRESH_TTL_MS = '1000';
+    process.env.RATE_LIMIT_LOGOUT_LIMIT = '4';
+    process.env.RATE_LIMIT_LOGOUT_TTL_MS = '2000';
+
+    const { rateLimit } = configuration();
+
+    expect(rateLimit.refresh).toEqual({ limit: 7, ttlMs: 1000 });
+    expect(rateLimit.logout).toEqual({ limit: 4, ttlMs: 2000 });
   });
 
   it('should default argon2 to 64 MiB, 3 iterations and parallelism 4', () => {

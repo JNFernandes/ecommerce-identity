@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { APP_FILTER, APP_GUARD } from '@nestjs/core';
+import { APP_FILTER, APP_GUARD, DiscoveryModule } from '@nestjs/core';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { CqrsModule } from '@nestjs/cqrs';
 import { TypeOrmModule } from '@nestjs/typeorm';
@@ -19,6 +19,7 @@ import { KafkaModule } from './infra/kafka/kafka.module';
 import { AccessTokenExceptionFilter } from './controllers/auth/access-token-exception.filter';
 import { JwtAuthGuard } from './controllers/auth/jwt-auth.guard';
 import { RolesGuard } from './controllers/auth/roles.guard';
+import { RoutePolicyCheck } from './controllers/auth/route-policy.check';
 import { AuthController, REGISTER_THROTTLER } from './controllers/auth.controller';
 import { HealthController } from './controllers/health.controller';
 import { JwksController } from './controllers/jwks.controller';
@@ -151,6 +152,7 @@ function createJwksService(publicKeySet: PublicKeySet, configService: ConfigServ
     }),
     KafkaModule,
     CqrsModule,
+    DiscoveryModule,
   ],
   controllers: [HealthController, AuthController, JwksController, UsersController],
   providers: [
@@ -189,6 +191,7 @@ function createJwksService(publicKeySet: PublicKeySet, configService: ConfigServ
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
     { provide: APP_FILTER, useClass: AccessTokenExceptionFilter },
+    RoutePolicyCheck,
     { provide: UserEventPublisher, useClass: UserEventsProducer },
     RegisterCustomerService,
     LoginService,

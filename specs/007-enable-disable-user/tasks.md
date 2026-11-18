@@ -74,7 +74,7 @@ No setup tasks: no package, configuration or migration changes (plan "Technical 
 
 - [X] T012 [P] [US2] Add `enable(at: Date): boolean` with JSDoc to `src/domain/user.aggregate.ts` (R1): already `ACTIVE` → `false`, no change; else `ACTIVE`, `updatedAt = at`, `true`. Extend `tests/unit/domain/user.aggregate.spec.ts`: change, no-op, `updatedAt`, other fields untouched, `canLogin()` true after. Commit `feat(US-07): add User.enable`.
 - [X] T013 [US2] Handle `ACTIVE` in `src/services/change-user-status.service.ts` (depends on T008, T012): `user.enable(now)`; if changed → `saveStatus` only (never `revokeAllRefreshTokens`); log `from=DISABLED to=ACTIVE revokedTokens=0`. Extend `tests/unit/services/change-user-status.service.spec.ts`: enable writes status, no revocation, one log line; enable on active → no write, no log; admin enabling themself → 200 path, no error. Commit `feat(US-07): re-enable users`.
-- [ ] T014 [US2] Component test `tests/component/users-status-enable.component.spec.ts`: disable then enable a customer → 200 `status: ACTIVE`; refresh token revoked by the disable → generic 401; login → 200 and the new refresh token works (US2-AS1–AS3, SC-007). Commit `test(US-07): cover re-enabling a user end to end`.
+- [X] T014 [US2] Component test `tests/component/users-status-enable.component.spec.ts`: disable then enable a customer → 200 `status: ACTIVE`; refresh token revoked by the disable → generic 401; login → 200 and the new refresh token works (US2-AS1–AS3, SC-007). Commit `test(US-07): cover re-enabling a user end to end`.
 
 **Checkpoint**: disable and enable both work.
 

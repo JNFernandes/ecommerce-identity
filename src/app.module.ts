@@ -18,6 +18,7 @@ import { buildTypeOrmOptions } from './infra/database/typeorm-options';
 import { KafkaModule } from './infra/kafka/kafka.module';
 import { AccessTokenExceptionFilter } from './controllers/auth/access-token-exception.filter';
 import { JwtAuthGuard } from './controllers/auth/jwt-auth.guard';
+import { RolesGuard } from './controllers/auth/roles.guard';
 import { AuthController, REGISTER_THROTTLER } from './controllers/auth.controller';
 import { HealthController } from './controllers/health.controller';
 import { JwksController } from './controllers/jwks.controller';
@@ -184,8 +185,9 @@ function createJwksService(publicKeySet: PublicKeySet, configService: ConfigServ
       inject: [KeyRing, ConfigService, Clock],
       useFactory: createAccessTokenVerifier,
     },
-    // Global guards run in registration order: authentication first (default deny).
+    // Global guards run in registration order: authentication (401), then roles (403).
     { provide: APP_GUARD, useClass: JwtAuthGuard },
+    { provide: APP_GUARD, useClass: RolesGuard },
     { provide: APP_FILTER, useClass: AccessTokenExceptionFilter },
     { provide: UserEventPublisher, useClass: UserEventsProducer },
     RegisterCustomerService,

@@ -51,6 +51,8 @@ describe('RefreshPolicy', () => {
   it('should rotate a usable token of an active user', () => {
     expect(RefreshPolicy.decide({ token: usable, user: active, now: NOW })).toEqual({
       kind: 'rotate',
+      token: usable,
+      user: active,
     });
   });
 

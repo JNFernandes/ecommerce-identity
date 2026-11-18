@@ -3,9 +3,13 @@ import { RefreshTokenState } from './refresh-token-state.enum';
 import { RefreshToken } from './refresh-token.aggregate';
 import { User } from './user.aggregate';
 
-/** The presented token may be rotated. */
+/** The presented token may be rotated; carries the usable token and its active owner. */
 export interface RotateDecision {
   kind: 'rotate';
+  /** The token to rotate. */
+  token: RefreshToken;
+  /** Its owner, allowed to log in. */
+  user: User;
 }
 
 /** The refresh is refused; `revokeFamily` says whether the whole family must be revoked first. */
@@ -58,7 +62,7 @@ export class RefreshPolicy {
     if (user === null || !user.canLogin()) {
       return refuse(RefreshFailureReason.INACTIVE_USER, true);
     }
-    return { kind: 'rotate' };
+    return { kind: 'rotate', token, user };
   }
 }
 

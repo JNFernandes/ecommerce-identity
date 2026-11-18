@@ -1,7 +1,14 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { INestApplication } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import request from 'supertest';
+import { Email } from '../../../src/domain/email.value-object';
+import { Role } from '../../../src/domain/role.enum';
+import { User } from '../../../src/domain/user.aggregate';
+import { UserName } from '../../../src/domain/user-name.value-object';
+import { UserStatus } from '../../../src/domain/user-status.enum';
+import { UserRepository } from '../../../src/repositories/user.repository';
+import { PasswordHasher } from '../../../src/services/ports/password-hasher';
 
 /** Password used for every account created by the token flow helpers. */
 export const FLOW_PASSWORD = 'correct-horse-battery';
@@ -50,13 +57,49 @@ export async function registerAndLogin(
     throw new Error(`register failed with ${registered.status}`);
   }
   const { id: userId, customerId } = registered.body as { id: string; customerId: string };
-  const login = await request(app.getHttpServer())
+  return { userId, customerId, tokens: await login(app, email) };
+}
+
+/** An admin inserted for a test, with the tokens of its first login. */
+export interface LoggedInAdmin {
+  userId: string;
+  tokens: TokenPair;
+}
+
+/** Logs in with {@link FLOW_PASSWORD}; fails the test when the login does not succeed. */
+async function login(app: INestApplication, email: string): Promise<TokenPair> {
+  const response = await request(app.getHttpServer())
     .post('/auth/login')
     .send({ email, password: FLOW_PASSWORD });
-  if (login.status !== 200) {
-    throw new Error(`login failed with ${login.status}`);
+  if (response.status !== 200) {
+    throw new Error(`login failed with ${response.status}`);
   }
-  return { userId, customerId, tokens: login.body as TokenPair };
+  return response.body as TokenPair;
+}
+
+/**
+ * Inserts an `ADMIN` user (no `customerId`) through `UserRepository`, then logs it in normally. The
+ * startup admin seed is not implemented yet, so tests create admins this way.
+ */
+export async function insertAdminAndLogin(
+  app: INestApplication,
+  email: string,
+): Promise<LoggedInAdmin> {
+  const now = new Date();
+  const admin = User.restore({
+    id: randomUUID(),
+    customerId: null,
+    email: Email.create(email),
+    name: UserName.create('Admin'),
+    passwordHash: await app.get(PasswordHasher).hash(FLOW_PASSWORD),
+    roles: [Role.ADMIN],
+    status: UserStatus.ACTIVE,
+    createdAt: now,
+    updatedAt: now,
+    lastLoginAt: null,
+  });
+  await app.get(UserRepository).save(admin);
+  return { userId: admin.id, tokens: await login(app, email) };
 }
 
 /** Sends `POST /auth/refresh` with the given token. */

@@ -2,9 +2,11 @@ import { Controller, Get, ServiceUnavailableException } from '@nestjs/common';
 import { ApiOkResponse, ApiServiceUnavailableResponse, ApiTags } from '@nestjs/swagger';
 import { HealthService } from '../services/health.service';
 import { HealthResponseDto, HealthStatus } from '../dto/health-response.dto';
+import { Public } from './auth/public.decorator';
 
 /** Public liveness/readiness endpoint, used by the Docker healthcheck. */
 @ApiTags('health')
+@Public()
 @Controller('health')
 export class HealthController {
   constructor(private readonly healthService: HealthService) {}

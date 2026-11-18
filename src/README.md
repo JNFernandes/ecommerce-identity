@@ -26,6 +26,10 @@ Controller → Service → Domain → Repository (Constitution Principle I).
   (`KeyRing`). Public, not throttled (`@SkipThrottle` for every throttler), no Kafka or database.
   Sends the precomputed body with `Cache-Control: public, max-age=<JWKS_CACHE_SECONDS>` and a
   strong `ETag`; a matching `If-None-Match` (`controllers/if-none-match.ts`) gets `304`.
+- `GET /users/me` — `UsersController` → `QueryBus` → `GetCurrentUserService` (`@QueryHandler` of
+  `GetCurrentUserQuery`) → `UserRepository.findById` → `CurrentUserReadModel` →
+  `CurrentUserResponseDto`. `@Roles(CUSTOMER, ADMIN)`. A missing or non-`ACTIVE` user throws
+  `InvalidAccessTokenError(USER_UNAVAILABLE)`, the same 401 as a bad token; database errors stay 5xx.
 - `GET /docs`, `GET /docs-json` — Swagger UI and OpenAPI document (`app.swagger.ts`).
 
 **Register write flow** (`RegisterCustomerService`):
@@ -96,6 +100,25 @@ Controller → Service → Domain → Repository (Constitution Principle I).
   transaction and thrown after the commit, so revocations persist.
 - **Logout flow** (`LogoutService`): hash → `findByHash` → `lockFamily` → `revokeFamily`; an unknown
   token is a no-op.
+
+**Added by US-05 (access control):**
+
+- `domain/authenticated-principal.ts` — `AuthenticatedPrincipal.fromClaims` (non-empty `sub`,
+  non-empty known `roles`, optional non-empty `customerId`) and `hasAnyRole`.
+  `domain/errors/invalid-access-token.error.ts` — `InvalidAccessTokenError` (fixed message
+  `unauthorized`) and its `AccessTokenFailureReason` (logged only).
+- `services/ports/access-token-verifier.ts` — `AccessTokenVerifier` port.
+  `infra/auth/jose-access-token-verifier.ts` — `JoseAccessTokenVerifier`: every `KeyRing` JWK
+  imported once by `kid`; `jwtVerify` with RS256 only, `iss`, `aud`, `JWT_CLOCK_TOLERANCE_SECONDS`,
+  required `sub`/`iat`/`exp`/`jti`, plus an explicit future-`iat` check. No network or file access
+  per request.
+- `controllers/auth/` — `@Public()`, `@Roles(...)` (also Swagger: bearer, `x-roles`, 401, 403),
+  `@CurrentUser()`, `AuthenticatedRequest`; global guards `JwtAuthGuard` (Bearer header → verifier
+  → `request.principal`) then `RolesGuard` (403 `forbidden`); `AccessTokenExceptionFilter`
+  (`APP_FILTER`, the only 401 mapping, `WWW-Authenticate: Bearer`, reason logged at `warn`);
+  `RoutePolicyCheck` (`OnApplicationBootstrap`, via `DiscoveryModule`) fails startup on any route
+  without exactly one policy.
+- `AuthController`, `JwksController` and `HealthController` are `@Public()` at class level.
 
 **Domain events produced:** `identity.user-registered` (`UserRegistered`, after the user is
 committed; contract in `ecommerce-infra/docs/events.md`).

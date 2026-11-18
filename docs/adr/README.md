@@ -20,3 +20,4 @@ requires (Documentation Standards).
 | [0002](0002-refresh-token-rotation-with-reuse-detection.md) | Refresh token rotation with reuse detection (opaque tokens stored hashed) | Accepted |
 | [0003](0003-admin-seed-and-no-role-change.md) | Admins only from a startup seed; no role-change endpoint | Accepted |
 | [0004](0004-user-registered-event-choreography.md) | Registration publishes `identity.user-registered`; Orders creates the customer | Accepted |
+| [0005](0005-default-deny-route-guards.md) | Default-deny route guards with local access token verification | Accepted |

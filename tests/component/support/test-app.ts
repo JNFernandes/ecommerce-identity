@@ -8,6 +8,7 @@ import { join } from 'path';
 import { PostgreSqlContainer, StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import { AppModule } from '../../../src/app.module';
 import { configureApp } from '../../../src/app.setup';
+import { configureSwagger } from '../../../src/app.swagger';
 
 /** Returns a local port with nothing listening on it, so a client pointed there fails fast. */
 export async function closedPort(): Promise<number> {
@@ -134,6 +135,8 @@ export interface ProviderOverride {
 export interface TestAppOptions {
   /** Test-only controllers mounted next to the app's own (e.g. a role probe). Never shipped. */
   extraControllers?: readonly Type[];
+  /** Mount Swagger at `/docs` and `/docs-json`, as `main.ts` does. Off by default. */
+  swagger?: boolean;
 }
 
 /**
@@ -161,6 +164,9 @@ export async function createTestApp(
   }
   const app = moduleRef.createNestApplication();
   configureApp(app);
+  if (options.swagger === true) {
+    configureSwagger(app);
+  }
   await app.init();
   return app;
 }

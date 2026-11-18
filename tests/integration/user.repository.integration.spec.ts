@@ -1,7 +1,9 @@
+import { randomBytes } from 'node:crypto';
 import { DataSource } from 'typeorm';
 import { PostgreSqlContainer, StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import { Email } from '../../src/domain/email.value-object';
 import { DuplicateEmailError } from '../../src/domain/errors/duplicate-email.error';
+import { RefreshToken } from '../../src/domain/refresh-token.aggregate';
 import { Role } from '../../src/domain/role.enum';
 import { User } from '../../src/domain/user.aggregate';
 import { UserName } from '../../src/domain/user-name.value-object';
@@ -10,6 +12,7 @@ import { UserEntity } from '../../src/infra/database/entities/user.entity';
 import { buildDataSourceOptions } from '../../src/infra/database/typeorm-options';
 import { ListUsersQuery } from '../../src/queries/list-users.query';
 import { UserSummaryReadModel } from '../../src/queries/user-summary.read-model';
+import { RefreshTokenRepository } from '../../src/repositories/refresh-token.repository';
 import { UserRepository } from '../../src/repositories/user.repository';
 
 jest.setTimeout(180_000);
@@ -62,6 +65,25 @@ function stored(
   });
 }
 
+/** A copy of `user` with another status and `updatedAt`, as `disable`/`enable` would leave it. */
+function withStatus(user: User, status: UserStatus, updatedAt: Date): User {
+  return User.restore({
+    id: user.id,
+    customerId: user.customerId,
+    email: user.email,
+    name: user.name,
+    passwordHash: user.passwordHash,
+    roles: user.roles,
+    status,
+    createdAt: user.createdAt,
+    updatedAt,
+    lastLoginAt: user.lastLoginAt,
+  });
+}
+
+/** Resolves after `ms` milliseconds. */
+const pause = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
 /** Emails of a page, in order. */
 function emails(items: UserSummaryReadModel[]): string[] {
   return items.map((item) => item.email);
@@ -74,8 +96,8 @@ describe('UserRepository (integration)', () => {
 
   beforeAll(async () => {
     container = await new PostgreSqlContainer('postgres:16-alpine').start();
-    dataSource = new DataSource(
-      buildDataSourceOptions({
+    dataSource = new DataSource({
+      ...buildDataSourceOptions({
         host: container.getHost(),
         port: container.getPort(),
         username: container.getUsername(),
@@ -83,7 +105,8 @@ describe('UserRepository (integration)', () => {
         database: container.getDatabase(),
         migrationsRun: false,
       }),
-    );
+      poolSize: 10,
+    });
     await dataSource.initialize();
     await dataSource.runMigrations();
     repository = new UserRepository(dataSource.getRepository(UserEntity));
@@ -383,6 +406,185 @@ describe('UserRepository (integration)', () => {
       await expect(
         repository.findSummaryById('00000000-0000-4000-8000-0000000000ff'),
       ).resolves.toBeNull();
+    });
+  });
+
+  describe('inStatusTransaction', () => {
+    const NOW = new Date('2026-11-18T12:00:00.000Z');
+    let tokens: RefreshTokenRepository;
+
+    beforeAll(() => {
+      tokens = new RefreshTokenRepository(dataSource);
+    });
+
+    beforeEach(async () => {
+      await dataSource.query('DELETE FROM "refresh_tokens"');
+      await dataSource.query('DELETE FROM "users"');
+    });
+
+    /** Stores a login token for the user and returns it. */
+    async function login(user: User, at: Date): Promise<RefreshToken> {
+      user.recordLogin(at);
+      const token = RefreshToken.issue({
+        userId: user.id,
+        tokenHash: randomBytes(32).toString('hex'),
+        issuedAt: at,
+        ttlSeconds: 604800,
+      });
+      await tokens.saveWithLogin(token, user);
+      return token;
+    }
+
+    /** Reads `revokedAt` and `replacedBy` of every token of a user, keyed by token id. */
+    async function tokenRows(
+      userId: string,
+    ): Promise<Map<string, { id: string; revokedAt: Date | null; replacedBy: string | null }>> {
+      const rows: { id: string; revokedAt: Date | null; replacedBy: string | null }[] =
+        await dataSource.query(
+          'SELECT "id", "revokedAt", "replacedBy" FROM "refresh_tokens" WHERE "userId" = $1',
+          [userId],
+        );
+      return new Map(rows.map((row) => [row.id, row]));
+    }
+
+    it('should map findByIdForUpdate to the aggregate and return null for an unknown id', async () => {
+      const user = customer('for-update@example.com');
+      await repository.save(user);
+
+      const [found, missing] = await repository.inStatusTransaction(async (tx) => [
+        await tx.findByIdForUpdate(user.id),
+        await tx.findByIdForUpdate('00000000-0000-4000-8000-0000000000aa'),
+      ]);
+
+      expect(found).toBeInstanceOf(User);
+      expect(found?.id).toBe(user.id);
+      expect(found?.email.value).toBe('for-update@example.com');
+      expect(found?.status).toBe(UserStatus.ACTIVE);
+      expect(missing).toBeNull();
+    });
+
+    it('should map findById to the aggregate', async () => {
+      const user = customer('find-tx@example.com');
+      await repository.save(user);
+
+      const found = await repository.inStatusTransaction((tx) => tx.findById(user.id));
+
+      expect(found?.id).toBe(user.id);
+    });
+
+    it('should count only ACTIVE admins', async () => {
+      await repository.save(admin('a1@example.com'));
+      await repository.save(admin('a2@example.com'));
+      await repository.save(admin('a3@example.com', UserStatus.DISABLED));
+      await repository.save(customer('c1@example.com'));
+
+      await expect(repository.inStatusTransaction((tx) => tx.countActiveAdmins())).resolves.toBe(2);
+    });
+
+    it('should write only status and updatedAt in saveStatus', async () => {
+      const user = customer('save-status@example.com');
+      await repository.save(user);
+      await login(user, new Date('2026-11-18T09:00:00.000Z'));
+      const before = await repository.findById(user.id);
+      if (before === null) {
+        throw new Error('setup failed');
+      }
+      // A copy holding other values in every other column proves those columns are not written.
+      const changed = User.restore({
+        id: user.id,
+        customerId: user.customerId,
+        email: Email.create('changed@example.com'),
+        name: UserName.create('Changed'),
+        passwordHash: '$argon2id$other',
+        roles: [Role.ADMIN],
+        status: UserStatus.DISABLED,
+        createdAt: user.createdAt,
+        updatedAt: NOW,
+        lastLoginAt: null,
+      });
+
+      await repository.inStatusTransaction((tx) => tx.saveStatus(changed));
+      const after = await repository.findById(user.id);
+
+      expect(after?.status).toBe(UserStatus.DISABLED);
+      expect(after?.updatedAt).toEqual(NOW);
+      expect(after?.email.value).toBe(before.email.value);
+      expect(after?.name.value).toBe(before.name.value);
+      expect(after?.roles).toEqual(before.roles);
+      expect(after?.passwordHash).toBe(before.passwordHash);
+      expect(after?.lastLoginAt).toEqual(before.lastLoginAt);
+      expect(after?.customerId).toBe(before.customerId);
+    });
+
+    it("should revoke every family of the user and leave other users' tokens alone", async () => {
+      const user = customer('revoke-all@example.com');
+      const other = customer('keep@example.com');
+      await repository.save(user);
+      await repository.save(other);
+      const first = await login(user, new Date('2026-11-18T09:00:00.000Z'));
+      const second = await login(user, new Date('2026-11-18T09:01:00.000Z'));
+      const third = await login(user, new Date('2026-11-18T09:02:00.000Z'));
+      const alreadyRevokedAt = new Date('2026-11-18T09:02:30.000Z');
+      const replacement = '00000000-0000-4000-8000-0000000000bb';
+      await dataSource.query(
+        'UPDATE "refresh_tokens" SET "revokedAt" = $2, "replacedBy" = $3 WHERE "id" = $1',
+        [third.id, alreadyRevokedAt, replacement],
+      );
+      const othersToken = await login(other, new Date('2026-11-18T09:03:00.000Z'));
+
+      const revoked = await repository.inStatusTransaction((tx) =>
+        tx.revokeAllRefreshTokens(user.id, NOW),
+      );
+      const rows = await tokenRows(user.id);
+
+      expect(revoked).toBe(2);
+      expect(first.familyId).not.toBe(second.familyId);
+      expect(rows.get(first.id)?.revokedAt).toEqual(NOW);
+      expect(rows.get(second.id)?.revokedAt).toEqual(NOW);
+      expect(rows.get(third.id)).toEqual({
+        id: third.id,
+        revokedAt: alreadyRevokedAt,
+        replacedBy: replacement,
+      });
+      expect((await tokenRows(other.id)).get(othersToken.id)?.revokedAt).toBeNull();
+    });
+
+    it('should roll back every write when work rejects', async () => {
+      const user = customer('rollback@example.com');
+      await repository.save(user);
+      await login(user, new Date('2026-11-18T09:00:00.000Z'));
+
+      await expect(
+        repository.inStatusTransaction(async (tx) => {
+          await tx.saveStatus(withStatus(user, UserStatus.DISABLED, NOW));
+          await tx.revokeAllRefreshTokens(user.id, NOW);
+          throw new Error('boom');
+        }),
+      ).rejects.toThrow('boom');
+
+      expect((await repository.findById(user.id))?.status).toBe(UserStatus.ACTIVE);
+      expect([...(await tokenRows(user.id)).values()].map((row) => row.revokedAt)).toEqual([null]);
+    });
+
+    it('should make a second lockStatusChanges wait until the first transaction commits', async () => {
+      const order: string[] = [];
+
+      await Promise.all([
+        repository.inStatusTransaction(async (tx) => {
+          await tx.lockStatusChanges();
+          order.push('first locked');
+          await pause(300);
+          order.push('first done');
+        }),
+        pause(50).then(() =>
+          repository.inStatusTransaction(async (tx) => {
+            await tx.lockStatusChanges();
+            order.push('second locked');
+          }),
+        ),
+      ]);
+
+      expect(order).toEqual(['first locked', 'first done', 'second locked']);
     });
   });
 });

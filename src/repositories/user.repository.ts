@@ -1,15 +1,125 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { EntityManager, IsNull, Repository } from 'typeorm';
 import { Email } from '../domain/email.value-object';
 import { DuplicateEmailError } from '../domain/errors/duplicate-email.error';
 import { Role } from '../domain/role.enum';
 import { User } from '../domain/user.aggregate';
 import { UserName } from '../domain/user-name.value-object';
+import { UserStatus } from '../domain/user-status.enum';
+import { RefreshTokenEntity } from '../infra/database/entities/refresh-token.entity';
 import { UserEntity } from '../infra/database/entities/user.entity';
 import { ListUsersQuery } from '../queries/list-users.query';
 import { UserPageReadModel, UserSummaryReadModel } from '../queries/user-summary.read-model';
 import { isUniqueViolation } from './errors/is-unique-violation';
+
+/**
+ * Key of the transaction-scoped advisory lock that serializes every user status change, as the two
+ * 32-bit integers of `pg_advisory_xact_lock(int, int)`. That key space never overlaps the 64-bit
+ * keys of the refresh token family locks.
+ */
+export const USER_STATUS_LOCK_KEY: readonly [number, number] = [0x1d_57a7, 1];
+
+/**
+ * Persistence operations available inside one status change transaction (see
+ * {@link UserRepository.inStatusTransaction}).
+ *
+ * Lock order: always `lockStatusChanges` → `findById` (acting admin, no lock) →
+ * `findByIdForUpdate` (target row) → writes. The advisory lock is taken before any row lock, so
+ * two status changes never wait on each other's rows and cannot deadlock.
+ */
+export interface UserStatusTx {
+  /**
+   * Takes the transaction-scoped advisory lock that serializes every status change. Released on
+   * commit or rollback.
+   */
+  lockStatusChanges(): Promise<void>;
+
+  /**
+   * Reads a user without locking it.
+   *
+   * @param id The user id.
+   * @returns The user, or `null` when none has this id.
+   */
+  findById(id: string): Promise<User | null>;
+
+  /**
+   * Reads a user and locks its row (`SELECT … FOR UPDATE`) until the transaction ends.
+   *
+   * @param id The user id.
+   * @returns The user as committed, or `null` when none has this id.
+   */
+  findByIdForUpdate(id: string): Promise<User | null>;
+
+  /** Counts the users that are `ACTIVE` and hold the `ADMIN` role. */
+  countActiveAdmins(): Promise<number>;
+
+  /**
+   * Writes the user's `status` and `updatedAt`; no other column is touched.
+   *
+   * @param user The user, after `disable` or `enable`.
+   */
+  saveStatus(user: User): Promise<void>;
+
+  /**
+   * Revokes every not-yet-revoked refresh token of a user, in every family. Already revoked rows
+   * keep their `revokedAt` and `replacedBy`.
+   *
+   * @param userId The user id.
+   * @param at The revocation time.
+   * @returns The number of tokens revoked.
+   */
+  revokeAllRefreshTokens(userId: string, at: Date): Promise<number>;
+}
+
+/** {@link UserStatusTx} bound to one TypeORM transaction manager. */
+class EntityManagerUserStatusTx implements UserStatusTx {
+  constructor(private readonly manager: EntityManager) {}
+
+  async lockStatusChanges(): Promise<void> {
+    await this.manager.query('SELECT pg_advisory_xact_lock($1::int, $2::int)', [
+      ...USER_STATUS_LOCK_KEY,
+    ]);
+  }
+
+  async findById(id: string): Promise<User | null> {
+    const entity = await this.manager.findOne(UserEntity, { where: { id } });
+    return entity === null ? null : UserRepository.toDomain(entity);
+  }
+
+  async findByIdForUpdate(id: string): Promise<User | null> {
+    const entity = await this.manager.findOne(UserEntity, {
+      where: { id },
+      lock: { mode: 'pessimistic_write' },
+    });
+    return entity === null ? null : UserRepository.toDomain(entity);
+  }
+
+  async countActiveAdmins(): Promise<number> {
+    return this.manager
+      .createQueryBuilder(UserEntity, 'user')
+      .where('user.status = :status', { status: UserStatus.ACTIVE })
+      .andWhere(':role::user_role_enum = ANY(user.roles)', { role: Role.ADMIN })
+      .getCount();
+  }
+
+  async saveStatus(user: User): Promise<void> {
+    await this.manager.update(
+      UserEntity,
+      { id: user.id },
+      { status: user.status, updatedAt: user.updatedAt },
+    );
+  }
+
+  async revokeAllRefreshTokens(userId: string, at: Date): Promise<number> {
+    const result = await this.manager.update(
+      RefreshTokenEntity,
+      { userId, revokedAt: IsNull() },
+      { revokedAt: at },
+    );
+    return result.affected ?? 0;
+  }
+}
 
 /**
  * Persists `User` aggregates in the `users` table. Maps explicitly between the aggregate and
@@ -78,6 +188,20 @@ export class UserRepository {
       .limit(1)
       .getRawOne<unknown>();
     return row !== undefined && row !== null;
+  }
+
+  /**
+   * Runs `work` in one database transaction (READ COMMITTED). Everything `work` does through the
+   * given {@link UserStatusTx} commits when it resolves and rolls back when it rejects. Callers
+   * take the locks in the order documented on {@link UserStatusTx}.
+   *
+   * @param work The unit of work; its result is returned after the commit.
+   * @returns What `work` resolved to.
+   */
+  async inStatusTransaction<T>(work: (tx: UserStatusTx) => Promise<T>): Promise<T> {
+    return this.repository.manager.transaction((manager) =>
+      work(new EntityManagerUserStatusTx(manager)),
+    );
   }
 
   /**

@@ -48,7 +48,7 @@ description: "Task list for US-04: Refresh the session and log out"
 
 ### DTO
 
-- [ ] T007 [P] Create `RefreshTokenDto` (`refreshToken`: `@IsString`, `@IsNotEmpty`, `@MaxLength(512)`, `@ApiProperty` with example) in `src/dto/refresh-token.dto.ts` (R15). Tests in `tests/unit/dto/refresh-token.dto.spec.ts` (class-validator): valid, missing, non-string, empty, 513 chars rejected. Commit `feat(US-04): add RefreshTokenDto`.
+- [X] T007 [P] Create `RefreshTokenDto` (`refreshToken`: `@IsString`, `@IsNotEmpty`, `@MaxLength(512)`, `@ApiProperty` with example) in `src/dto/refresh-token.dto.ts` (R15). Tests in `tests/unit/dto/refresh-token.dto.spec.ts` (class-validator): valid, missing, non-string, empty, 513 chars rejected. Commit `feat(US-04): add RefreshTokenDto`.
 
 ### Persistence
 

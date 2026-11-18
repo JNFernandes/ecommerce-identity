@@ -34,6 +34,9 @@ const VARIABLES = [
   'RATE_LIMIT_REFRESH_TTL_MS',
   'RATE_LIMIT_LOGOUT_LIMIT',
   'RATE_LIMIT_LOGOUT_TTL_MS',
+  'ADMIN_EMAIL',
+  'ADMIN_PASSWORD',
+  'ADMIN_NAME',
 ];
 
 describe('configuration', () => {
@@ -262,6 +265,54 @@ describe('configuration', () => {
     process.env.JWKS_CACHE_SECONDS = 'abc';
 
     expect(configuration().jwks.cacheSeconds).toBe('abc');
+  });
+
+  describe('admin seed', () => {
+    it('should leave email and password unset and default the name when no variable is set', () => {
+      expect(configuration().admin).toEqual({
+        email: undefined,
+        password: undefined,
+        name: 'Administrator',
+      });
+    });
+
+    it('should read every admin seed variable, trimming the email and the name', () => {
+      process.env.ADMIN_EMAIL = '  Admin@Example.com ';
+      process.env.ADMIN_PASSWORD = 'change-me-now-123';
+      process.env.ADMIN_NAME = '  Root Admin ';
+
+      expect(configuration().admin).toEqual({
+        email: 'Admin@Example.com',
+        password: 'change-me-now-123',
+        name: 'Root Admin',
+      });
+    });
+
+    it('should treat empty values as unset', () => {
+      process.env.ADMIN_EMAIL = '';
+      process.env.ADMIN_PASSWORD = '';
+      process.env.ADMIN_NAME = '';
+
+      expect(configuration().admin).toEqual({
+        email: undefined,
+        password: undefined,
+        name: 'Administrator',
+      });
+    });
+
+    it('should treat a whitespace-only email or name as unset', () => {
+      process.env.ADMIN_EMAIL = '   ';
+      process.env.ADMIN_NAME = '   ';
+
+      expect(configuration().admin.email).toBeUndefined();
+      expect(configuration().admin.name).toBe('Administrator');
+    });
+
+    it('should keep the password exactly as given, including surrounding spaces', () => {
+      process.env.ADMIN_PASSWORD = '  spaced password  ';
+
+      expect(configuration().admin.password).toBe('  spaced password  ');
+    });
   });
 
   describe('parseNonNegativeInteger', () => {

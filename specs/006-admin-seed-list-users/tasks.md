@@ -30,7 +30,7 @@ description: "Task list for US-06: Seed the first administrator and let admins l
 
 ## Phase 1: Setup (configuration)
 
-- [ ] T001 Add `AdminSeedConfig` (`email?`, `password?`, `name`, JSDoc) and the `admin` block to `src/config/configuration.ts` (R9): `ADMIN_EMAIL` trimmed, empty → `undefined`; `ADMIN_PASSWORD` not trimmed, empty → `undefined`; `ADMIN_NAME` trimmed, empty or unset → `Administrator`. Extend `tests/unit/config/configuration.spec.ts`: all unset, all set, empty strings → `undefined`, whitespace-only email → `undefined`, password with surrounding spaces kept as is, name default. Commit `feat(US-06): add the admin seed configuration`.
+- [X] T001 Add `AdminSeedConfig` (`email?`, `password?`, `name`, JSDoc) and the `admin` block to `src/config/configuration.ts` (R9): `ADMIN_EMAIL` trimmed, empty → `undefined`; `ADMIN_PASSWORD` not trimmed, empty → `undefined`; `ADMIN_NAME` trimmed, empty or unset → `Administrator`. Extend `tests/unit/config/configuration.spec.ts`: all unset, all set, empty strings → `undefined`, whitespace-only email → `undefined`, password with surrounding spaces kept as is, name default. Commit `feat(US-06): add the admin seed configuration`.
 
 ---
 

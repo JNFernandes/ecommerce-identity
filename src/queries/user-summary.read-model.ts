@@ -1,4 +1,5 @@
 import { Role } from '../domain/role.enum';
+import { User } from '../domain/user.aggregate';
 import { UserStatus } from '../domain/user-status.enum';
 
 /**
@@ -34,4 +35,23 @@ export interface UserPageReadModel {
   limit: number;
   /** Number of matching users skipped. */
   offset: number;
+}
+
+/**
+ * Builds the admin read model from a `User` aggregate, with the same fields the repository reads
+ * for `GET /users/{id}`. Used when a command returns the user it just changed.
+ *
+ * @param user The aggregate.
+ */
+export function toUserSummary(user: User): UserSummaryReadModel {
+  return {
+    id: user.id,
+    customerId: user.customerId,
+    email: user.email.value,
+    name: user.name.value,
+    roles: user.roles,
+    status: user.status,
+    createdAt: user.createdAt,
+    lastLoginAt: user.lastLoginAt,
+  };
 }

@@ -3,12 +3,21 @@ import { ConfigService } from '@nestjs/config';
 import { AdminSeedConfig } from '../config/configuration';
 import { AdminSeedDecision, AdminSeedPolicy } from '../domain/admin-seed-policy';
 import { Email } from '../domain/email.value-object';
+import { DuplicateEmailError } from '../domain/errors/duplicate-email.error';
+import { UserValidationError } from '../domain/errors/user-validation.error';
 import { PasswordPolicy } from '../domain/password-policy';
 import { Role } from '../domain/role.enum';
 import { User } from '../domain/user.aggregate';
 import { UserName } from '../domain/user-name.value-object';
 import { UserRepository } from '../repositories/user.repository';
 import { PasswordHasher } from './ports/password-hasher';
+
+/** A seed value broke a registration rule: names the variable and the rule, never the value. */
+class InvalidSeedValue extends Error {
+  constructor(variable: string, rule: string) {
+    super(`${variable}: ${rule}`);
+  }
+}
 
 /** Seed values that passed the registration rules. */
 interface ValidSeed {
@@ -66,25 +75,62 @@ export class AdminSeedService implements OnApplicationBootstrap {
       return;
     }
 
-    const seed = this.validate(config);
+    let seed: ValidSeed;
+    try {
+      seed = AdminSeedService.validate(config);
+    } catch (error) {
+      if (error instanceof InvalidSeedValue) {
+        this.logger.error(`Admin seed skipped: ${error.message}`);
+        return;
+      }
+      throw error;
+    }
+
     const emailOwner = await this.userRepository.findByEmail(seed.email.value);
     const decision = AdminSeedPolicy.decide({ emailOwner });
-    if (decision !== AdminSeedDecision.CREATE) {
+    if (decision === AdminSeedDecision.SKIP_EMAIL_TAKEN) {
+      this.logger.error('ADMIN_EMAIL belongs to an existing non-admin user; admin seed skipped');
       return;
     }
 
     const passwordHash = await this.passwordHasher.hash(seed.password);
     const admin = User.registerAdmin(seed.email, seed.name, passwordHash);
-    await this.userRepository.save(admin);
+    try {
+      await this.userRepository.save(admin);
+    } catch (error) {
+      if (error instanceof DuplicateEmailError) {
+        this.logger.warn('Administrator already seeded by another instance; admin seed skipped');
+        return;
+      }
+      throw error;
+    }
     this.logger.log(`Administrator seeded: id=${admin.id}`);
   }
 
-  /** Applies the registration rules to the configured values. */
-  private validate(config: AdminSeedConfig): ValidSeed {
-    const email = Email.create(config.email ?? '');
-    const name = UserName.create(config.name);
+  /**
+   * Applies the registration rules to the configured values, naming the variable that failed.
+   *
+   * @throws InvalidSeedValue With `ADMIN_<VAR>: <rule>`; rule messages never contain a value.
+   */
+  private static validate(config: AdminSeedConfig): ValidSeed {
+    const email = AdminSeedService.check('ADMIN_EMAIL', () => Email.create(config.email ?? ''));
+    const name = AdminSeedService.check('ADMIN_NAME', () => UserName.create(config.name));
     const password = config.password ?? '';
-    PasswordPolicy.assertAcceptable(password, email);
+    AdminSeedService.check('ADMIN_PASSWORD', () =>
+      PasswordPolicy.assertAcceptable(password, email),
+    );
     return { email, name, password };
+  }
+
+  /** Runs one rule, turning its `UserValidationError` into an {@link InvalidSeedValue}. */
+  private static check<T>(variable: string, rule: () => T): T {
+    try {
+      return rule();
+    } catch (error) {
+      if (error instanceof UserValidationError) {
+        throw new InvalidSeedValue(variable, error.message);
+      }
+      throw error;
+    }
   }
 }

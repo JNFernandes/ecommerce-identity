@@ -2,8 +2,11 @@ import 'reflect-metadata';
 import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AdminSeedConfig } from '../../../src/config/configuration';
+import { Email } from '../../../src/domain/email.value-object';
+import { DuplicateEmailError } from '../../../src/domain/errors/duplicate-email.error';
 import { Role } from '../../../src/domain/role.enum';
 import { User } from '../../../src/domain/user.aggregate';
+import { UserName } from '../../../src/domain/user-name.value-object';
 import { UserStatus } from '../../../src/domain/user-status.enum';
 import { UserRepository } from '../../../src/repositories/user.repository';
 import { AdminSeedService } from '../../../src/services/admin-seed.service';
@@ -121,6 +124,79 @@ describe('AdminSeedService', () => {
       expect(error).not.toHaveBeenCalled();
     },
   );
+
+  it.each([
+    [
+      'a password shorter than 10 characters',
+      { password: 'short-pw' },
+      'ADMIN_PASSWORD: password must be between 10 and 128 characters',
+    ],
+    [
+      'a password longer than 128 characters',
+      { password: 'x'.repeat(129) },
+      'ADMIN_PASSWORD: password must be between 10 and 128 characters',
+    ],
+    [
+      'a password equal to the email',
+      { password: ' ADMIN@example.com ' },
+      'ADMIN_PASSWORD: password must not be the same as the email',
+    ],
+    [
+      'an invalid email',
+      { email: 'not-an-email' },
+      'ADMIN_EMAIL: email must be a valid email address',
+    ],
+    ['a blank name', { name: '   ' }, 'ADMIN_NAME: name must not be empty'],
+  ])('should log an error naming the rule and save nothing for %s', async (_case, values, rule) => {
+    config = { ...config, ...values };
+
+    await service.seed();
+
+    expect(error).toHaveBeenCalledWith(`Admin seed skipped: ${rule}`);
+    expect(findByEmail).not.toHaveBeenCalled();
+    expect(hash).not.toHaveBeenCalled();
+    expect(save).not.toHaveBeenCalled();
+    expect(loggedText()).not.toContain(config.password ?? '<unset>');
+  });
+
+  it('should log an error and leave an existing non-admin user untouched', async () => {
+    const customer = User.registerCustomer(
+      Email.create('admin@example.com'),
+      UserName.create('Ana'),
+      HASH,
+    );
+    findByEmail.mockResolvedValue(customer);
+
+    await service.seed();
+
+    expect(error).toHaveBeenCalledWith(
+      'ADMIN_EMAIL belongs to an existing non-admin user; admin seed skipped',
+    );
+    expect(hash).not.toHaveBeenCalled();
+    expect(save).not.toHaveBeenCalled();
+    expect(customer.roles).toEqual([Role.CUSTOMER]);
+    expect(loggedText()).not.toContain(PASSWORD);
+  });
+
+  it('should look up ADMIN_EMAIL normalized, whatever its case and spaces', async () => {
+    config = { ...config, email: '  ADMIN@Example.COM ' };
+
+    await service.seed();
+
+    expect(findByEmail).toHaveBeenCalledWith('admin@example.com');
+  });
+
+  it('should warn when another instance seeded the admin concurrently', async () => {
+    save.mockRejectedValue(new DuplicateEmailError());
+
+    await service.seed();
+
+    expect(warn).toHaveBeenCalledWith(
+      'Administrator already seeded by another instance; admin seed skipped',
+    );
+    expect(error).not.toHaveBeenCalled();
+    expect(log).not.toHaveBeenCalled();
+  });
 
   it('should not depend on the event publisher', () => {
     const parameters: unknown[] =

@@ -20,6 +20,7 @@ const VARIABLES = [
   'JWT_PRIVATE_KEY_PATH',
   'JWT_REFRESH_TTL_SECONDS',
   'JWT_RETIRED_PUBLIC_KEY_PATHS',
+  'JWT_SESSION_MAX_SECONDS',
   'JWKS_CACHE_SECONDS',
   'ARGON2_MEMORY_COST_KIB',
   'ARGON2_TIME_COST',
@@ -28,6 +29,10 @@ const VARIABLES = [
   'RATE_LIMIT_REGISTER_TTL_MS',
   'RATE_LIMIT_LOGIN_LIMIT',
   'RATE_LIMIT_LOGIN_TTL_MS',
+  'RATE_LIMIT_REFRESH_LIMIT',
+  'RATE_LIMIT_REFRESH_TTL_MS',
+  'RATE_LIMIT_LOGOUT_LIMIT',
+  'RATE_LIMIT_LOGOUT_TTL_MS',
 ];
 
 describe('configuration', () => {
@@ -85,6 +90,38 @@ describe('configuration', () => {
     expect(configuration().jwt.refreshTtlSeconds).toBe(3600);
   });
 
+  it('should default the absolute session limit to 30 days', () => {
+    expect(configuration().jwt.sessionMaxSeconds).toBe(2592000);
+  });
+
+  it('should read the absolute session limit from the environment', () => {
+    process.env.JWT_SESSION_MAX_SECONDS = '1209600';
+
+    expect(configuration().jwt.sessionMaxSeconds).toBe(1209600);
+  });
+
+  it.each(['-1', 'abc', '1.5'])('should reject a session limit of %p', (raw) => {
+    process.env.JWT_SESSION_MAX_SECONDS = raw;
+
+    expect(() => configuration()).toThrow('JWT_SESSION_MAX_SECONDS must be a non-negative integer');
+  });
+
+  it('should reject a session limit shorter than the refresh token lifetime', () => {
+    process.env.JWT_REFRESH_TTL_SECONDS = '3600';
+    process.env.JWT_SESSION_MAX_SECONDS = '3599';
+
+    expect(() => configuration()).toThrow(
+      'JWT_SESSION_MAX_SECONDS must be >= JWT_REFRESH_TTL_SECONDS',
+    );
+  });
+
+  it('should accept a session limit equal to the refresh token lifetime', () => {
+    process.env.JWT_REFRESH_TTL_SECONDS = '3600';
+    process.env.JWT_SESSION_MAX_SECONDS = '3600';
+
+    expect(configuration().jwt.sessionMaxSeconds).toBe(3600);
+  });
+
   it('should default the login rate limit to 10 requests per minute', () => {
     expect(configuration().rateLimit.login).toEqual({ limit: 10, ttlMs: 60000 });
   });
@@ -94,6 +131,25 @@ describe('configuration', () => {
     process.env.RATE_LIMIT_LOGIN_TTL_MS = '2000';
 
     expect(configuration().rateLimit.login).toEqual({ limit: 3, ttlMs: 2000 });
+  });
+
+  it('should default the refresh and logout rate limits to 30 requests per minute', () => {
+    const { rateLimit } = configuration();
+
+    expect(rateLimit.refresh).toEqual({ limit: 30, ttlMs: 60000 });
+    expect(rateLimit.logout).toEqual({ limit: 30, ttlMs: 60000 });
+  });
+
+  it('should read the refresh and logout rate limits from the environment', () => {
+    process.env.RATE_LIMIT_REFRESH_LIMIT = '7';
+    process.env.RATE_LIMIT_REFRESH_TTL_MS = '1000';
+    process.env.RATE_LIMIT_LOGOUT_LIMIT = '4';
+    process.env.RATE_LIMIT_LOGOUT_TTL_MS = '2000';
+
+    const { rateLimit } = configuration();
+
+    expect(rateLimit.refresh).toEqual({ limit: 7, ttlMs: 1000 });
+    expect(rateLimit.logout).toEqual({ limit: 4, ttlMs: 2000 });
   });
 
   it('should default argon2 to 64 MiB, 3 iterations and parallelism 4', () => {

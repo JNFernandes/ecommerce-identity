@@ -22,6 +22,8 @@ import {
   LOGIN_EMAIL_THROTTLER,
   LOGIN_IP_THROTTLER,
   loginThrottleTracker,
+  LOGOUT_THROTTLER,
+  REFRESH_THROTTLER,
 } from './controllers/login-throttle.tracker';
 import { HealthService } from './services/health.service';
 import { OutboundDeadLetterRepository } from './repositories/outbound-dead-letter.repository';
@@ -41,7 +43,9 @@ import { UserEventPublisher } from './services/ports/user-event-publisher';
 import { UserEventsProducer } from './infra/kafka/user-events.producer';
 import { DEFAULT_JWKS_CACHE_SECONDS, JwksService } from './services/jwks.service';
 import { LoginService } from './services/login.service';
+import { LogoutService } from './services/logout.service';
 import { PublicKeySet } from './services/ports/public-key-set';
+import { RefreshService } from './services/refresh.service';
 import { RegisterCustomerService } from './services/register-customer.service';
 
 /**
@@ -83,7 +87,8 @@ function createJwksService(publicKeySet: PublicKeySet, configService: ConfigServ
     ThrottlerModule.forRootAsync({
       inject: [ConfigService],
       useFactory: (configService: ConfigService) => {
-        const { register, login } = configService.getOrThrow<RateLimitConfig>('rateLimit');
+        const { register, login, refresh, logout } =
+          configService.getOrThrow<RateLimitConfig>('rateLimit');
         return [
           { name: REGISTER_THROTTLER, limit: register.limit, ttl: register.ttlMs },
           {
@@ -97,6 +102,18 @@ function createJwksService(publicKeySet: PublicKeySet, configService: ConfigServ
             limit: login.limit,
             ttl: login.ttlMs,
             getTracker: loginThrottleTracker('email'),
+          },
+          {
+            name: REFRESH_THROTTLER,
+            limit: refresh.limit,
+            ttl: refresh.ttlMs,
+            getTracker: loginThrottleTracker('ip'),
+          },
+          {
+            name: LOGOUT_THROTTLER,
+            limit: logout.limit,
+            ttl: logout.ttlMs,
+            getTracker: loginThrottleTracker('ip'),
           },
         ];
       },
@@ -135,6 +152,8 @@ function createJwksService(publicKeySet: PublicKeySet, configService: ConfigServ
     { provide: UserEventPublisher, useClass: UserEventsProducer },
     RegisterCustomerService,
     LoginService,
+    RefreshService,
+    LogoutService,
   ],
 })
 export class AppModule {}

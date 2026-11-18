@@ -7,6 +7,12 @@ export const LOGIN_IP_THROTTLER = 'login-ip';
 /** Name of the throttler that limits `POST /auth/login` per normalized email. */
 export const LOGIN_EMAIL_THROTTLER = 'login-email';
 
+/** Name of the throttler that limits `POST /auth/refresh` per client IP. */
+export const REFRESH_THROTTLER = 'refresh';
+
+/** Name of the throttler that limits `POST /auth/logout` per client IP. */
+export const LOGOUT_THROTTLER = 'logout';
+
 /** What a login throttle bucket is keyed on. */
 export type LoginThrottleKind = 'ip' | 'email';
 

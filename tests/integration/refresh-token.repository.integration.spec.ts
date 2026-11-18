@@ -1,3 +1,4 @@
+import { randomBytes, randomUUID } from 'node:crypto';
 import { DataSource } from 'typeorm';
 import { PostgreSqlContainer, StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import { Email } from '../../src/domain/email.value-object';
@@ -115,5 +116,165 @@ describe('RefreshTokenRepository (integration)', () => {
     ).rejects.toMatchObject({ code: '23505' });
 
     expect(await lastLoginAt(second.id)).toBeNull();
+  });
+
+  describe('inTransaction', () => {
+    const LOGIN_AT = new Date('2026-11-18T10:00:00.000Z');
+    const ROTATED_AT = new Date('2026-11-18T10:05:00.000Z');
+
+    /** A random 64-hex-character hash, unique per call. */
+    const newHash = (): string => randomBytes(32).toString('hex');
+
+    /** Stores a login token for a new customer and returns both. */
+    async function loggedIn(email: string): Promise<{ user: User; token: RefreshToken }> {
+      const user = await savedCustomer(email);
+      user.recordLogin(LOGIN_AT);
+      const token = tokenFor(user, newHash(), LOGIN_AT);
+      await repository.saveWithLogin(token, user);
+      return { user, token };
+    }
+
+    /** Reads every row of a family, oldest first. */
+    async function familyRows(familyId: string): Promise<TokenRow[]> {
+      return dataSource.query(
+        `SELECT * FROM "refresh_tokens" WHERE "familyId" = $1 ORDER BY "createdAt", "id"`,
+        [familyId],
+      );
+    }
+
+    /** Builds the successor of `token` issued at `ROTATED_AT`. */
+    function successorOf(token: RefreshToken): RefreshToken {
+      return RefreshToken.issueInFamily({
+        userId: token.userId,
+        familyId: token.familyId,
+        tokenHash: newHash(),
+        issuedAt: ROTATED_AT,
+        expiresAt: new Date('2026-11-25T10:05:00.000Z'),
+      });
+    }
+
+    it('should commit the rotated token and its successor together', async () => {
+      const { token } = await loggedIn('rotate@example.com');
+
+      const next = await repository.inTransaction(async (tx) => {
+        const locked = await tx.findByHashForUpdate(token.tokenHash);
+        if (locked === null) {
+          throw new Error('token not found');
+        }
+        const successor = successorOf(locked);
+        locked.rotate(successor.id, ROTATED_AT);
+        await tx.saveRotation(locked, successor);
+        return successor;
+      });
+
+      const rows = await familyRows(token.familyId);
+      expect(rows).toHaveLength(2);
+      expect(rows[0]).toMatchObject({ id: token.id, revokedAt: ROTATED_AT, replacedBy: next.id });
+      expect(rows[1]).toMatchObject({
+        id: next.id,
+        tokenHash: next.tokenHash,
+        familyId: token.familyId,
+        createdAt: ROTATED_AT,
+        revokedAt: null,
+        replacedBy: null,
+      });
+    });
+
+    it('should roll back both rows when the work fails', async () => {
+      const { token } = await loggedIn('rollback@example.com');
+
+      await expect(
+        repository.inTransaction(async (tx) => {
+          const successor = successorOf(token);
+          token.rotate(successor.id, ROTATED_AT);
+          await tx.saveRotation(token, successor);
+          throw new Error('boom');
+        }),
+      ).rejects.toThrow('boom');
+
+      const rows = await familyRows(token.familyId);
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({ id: token.id, revokedAt: null, replacedBy: null });
+    });
+
+    it('should revoke only the unrevoked tokens of the given family', async () => {
+      const { token } = await loggedIn('revoke@example.com');
+      const { token: other } = await loggedIn('other-family@example.com');
+      const next = successorOf(token);
+      await repository.inTransaction(async (tx) => {
+        token.rotate(next.id, ROTATED_AT);
+        await tx.saveRotation(token, next);
+      });
+      const revokeAt = new Date('2026-11-18T11:00:00.000Z');
+
+      const revoked = await repository.inTransaction((tx) =>
+        tx.revokeFamily(token.familyId, revokeAt),
+      );
+
+      expect(revoked).toBe(1);
+      const rows = await familyRows(token.familyId);
+      expect(rows[0]).toMatchObject({ id: token.id, revokedAt: ROTATED_AT, replacedBy: next.id });
+      expect(rows[1]).toMatchObject({ id: next.id, revokedAt: revokeAt, replacedBy: null });
+      expect(await familyRows(other.familyId)).toEqual([
+        expect.objectContaining({ id: other.id, revokedAt: null }),
+      ]);
+    });
+
+    it('should return the login time as the start of the family', async () => {
+      const { token } = await loggedIn('started@example.com');
+      const next = successorOf(token);
+      await repository.inTransaction(async (tx) => {
+        token.rotate(next.id, ROTATED_AT);
+        await tx.saveRotation(token, next);
+      });
+
+      await expect(
+        repository.inTransaction((tx) => tx.familyStartedAt(token.familyId)),
+      ).resolves.toEqual(LOGIN_AT);
+    });
+
+    it('should return no start for an unknown family', async () => {
+      await expect(
+        repository.inTransaction((tx) => tx.familyStartedAt(randomUUID())),
+      ).resolves.toBeNull();
+    });
+
+    it('should find a token by hash with and without a lock', async () => {
+      const { token } = await loggedIn('find@example.com');
+
+      const [plain, locked] = await repository.inTransaction(async (tx) => {
+        const found = await tx.findByHash(token.tokenHash);
+        await tx.lockFamily(token.familyId);
+        return [found, await tx.findByHashForUpdate(token.tokenHash)];
+      });
+
+      expect(plain?.id).toBe(token.id);
+      expect(locked?.id).toBe(token.id);
+      expect(locked?.familyId).toBe(token.familyId);
+      expect(locked?.expiresAt).toEqual(token.expiresAt);
+    });
+
+    it('should return null for an unknown hash', async () => {
+      const [plain, locked] = await repository.inTransaction(async (tx) => [
+        await tx.findByHash(newHash()),
+        await tx.findByHashForUpdate(newHash()),
+      ]);
+
+      expect(plain).toBeNull();
+      expect(locked).toBeNull();
+    });
+
+    it('should read the current user inside the transaction', async () => {
+      const { user } = await loggedIn('owner@example.com');
+
+      const found = await repository.inTransaction((tx) => tx.findUserById(user.id));
+
+      expect(found?.id).toBe(user.id);
+      expect(found?.roles).toEqual(user.roles);
+      expect(found?.customerId).toBe(user.customerId);
+      await expect(
+        repository.inTransaction((tx) => tx.findUserById(randomUUID())),
+      ).resolves.toBeNull();
+    });
   });
 });

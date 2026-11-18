@@ -17,6 +17,11 @@ Controller → Service → Domain → Repository (Constitution Principle I).
   the `login-ip` and `login-email` throttlers (`controllers/login-throttle.tracker.ts`); each route
   skips the other route's throttlers with `@SkipThrottle`. `InvalidCredentialsError` maps to the
   generic `401`, `UserValidationError` to `400`.
+- `POST /auth/refresh` — `AuthController` → `CommandBus` → `RefreshService`. Public, rate limited
+  per client IP (throttler `refresh`). `InvalidRefreshTokenError` (every reason) maps to the
+  generic `401` `invalid refresh token`.
+- `POST /auth/logout` — `AuthController` → `CommandBus` → `LogoutService`. Public, rate limited per
+  client IP (throttler `logout`); always `204` for a well-formed body.
 - `GET` / `HEAD /.well-known/jwks.json` — `JwksController` → `JwksService` → `PublicKeySet`
   (`KeyRing`). Public, not throttled (`@SkipThrottle` for every throttler), no Kafka or database.
   Sends the precomputed body with `Cache-Control: public, max-age=<JWKS_CACHE_SECONDS>` and a
@@ -73,6 +78,24 @@ Controller → Service → Domain → Repository (Constitution Principle I).
 - `services/ports/public-key-set.ts` — `PublicKeySet` port, bound to `KeyRing`.
 - `services/jwks.service.ts` — `JwksService`; `AppModule` builds it with `JWKS_CACHE_SECONDS`
   parsed strictly, so a bad value fails startup. `SigningKey` is now `ring.activeKey`.
+
+**Added by US-04:**
+
+- `domain/refresh-policy.ts` — `RefreshPolicy.decide`: rotate, or refuse with a
+  `RefreshFailureReason` and whether to revoke the family. `RefreshToken` gains `assess`,
+  `isUsable`, `rotate` and `issueInFamily`; `domain/token-family.ts` (`TokenFamily`) holds the
+  absolute session limit (`JWT_SESSION_MAX_SECONDS`).
+- `repositories/refresh-token.repository.ts` — `inTransaction(work)` hands the work a
+  `RefreshTokenTx` (`findByHash`, `lockFamily`, `findByHashForUpdate`, `findUserById`,
+  `familyStartedAt`, `revokeFamily`, `saveRotation`). Lock order is always family lock, then row
+  lock.
+- **Refresh flow** (`RefreshService`): hash → in one transaction: `findByHash` → `lockFamily` →
+  `findByHashForUpdate` → `findUserById` → `RefreshPolicy.decide` → revoke the family, or
+  `TokenFamily.nextTokenExpiry` → `TokenIssuer.issue` (current roles, `customerId`) →
+  `RefreshToken.issueInFamily` → `rotate` → `saveRotation`. A refusal is returned from the
+  transaction and thrown after the commit, so revocations persist.
+- **Logout flow** (`LogoutService`): hash → `findByHash` → `lockFamily` → `revokeFamily`; an unknown
+  token is a no-op.
 
 **Domain events produced:** `identity.user-registered` (`UserRegistered`, after the user is
 committed; contract in `ecommerce-infra/docs/events.md`).

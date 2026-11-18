@@ -1,11 +1,17 @@
 import { BadRequestException, ConflictException, UnauthorizedException } from '@nestjs/common';
 import { CommandBus } from '@nestjs/cqrs';
 import { LoginCommand } from '../../../src/commands/login.command';
+import { LogoutCommand } from '../../../src/commands/logout.command';
+import { RefreshCommand } from '../../../src/commands/refresh.command';
 import { RegisterCustomerCommand } from '../../../src/commands/register-customer.command';
 import { AuthController } from '../../../src/controllers/auth.controller';
 import { Email } from '../../../src/domain/email.value-object';
 import { DuplicateEmailError } from '../../../src/domain/errors/duplicate-email.error';
 import { InvalidCredentialsError } from '../../../src/domain/errors/invalid-credentials.error';
+import {
+  InvalidRefreshTokenError,
+  RefreshFailureReason,
+} from '../../../src/domain/errors/invalid-refresh-token.error';
 import { UserValidationError } from '../../../src/domain/errors/user-validation.error';
 import { User } from '../../../src/domain/user.aggregate';
 import { UserName } from '../../../src/domain/user-name.value-object';
@@ -132,6 +138,77 @@ describe('AuthController', () => {
       execute.mockRejectedValue(failure);
 
       await expect(controller.login(loginBody, '203.0.113.7')).rejects.toBe(failure);
+    });
+  });
+
+  describe('refresh', () => {
+    const refreshBody = { refreshToken: 'opaque-refresh' };
+    const result = {
+      accessToken: 'signed.access.token',
+      refreshToken: 'next-opaque-refresh',
+      tokenType: 'Bearer' as const,
+      expiresIn: 900,
+    };
+
+    it('should dispatch a RefreshCommand with the token and the client IP', async () => {
+      execute.mockResolvedValue(result);
+
+      await controller.refresh(refreshBody, '203.0.113.7');
+
+      expect(execute).toHaveBeenCalledWith(new RefreshCommand('opaque-refresh', '203.0.113.7'));
+    });
+
+    it('should return the login response DTO', async () => {
+      execute.mockResolvedValue(result);
+
+      const response = await controller.refresh(refreshBody, '203.0.113.7');
+
+      expect(response).toBeInstanceOf(LoginResponseDto);
+      expect({ ...response }).toEqual(result);
+    });
+
+    it.each(Object.values(RefreshFailureReason))(
+      'should map InvalidRefreshTokenError(%s) to the same generic 401 body',
+      async (reason) => {
+        execute.mockRejectedValue(new InvalidRefreshTokenError(reason));
+
+        const error: unknown = await controller
+          .refresh(refreshBody, '203.0.113.7')
+          .catch((caught: unknown) => caught);
+
+        expect(error).toBeInstanceOf(UnauthorizedException);
+        expect((error as UnauthorizedException).getResponse()).toEqual({
+          statusCode: 401,
+          message: 'invalid refresh token',
+          error: 'Unauthorized',
+        });
+      },
+    );
+
+    it('should rethrow any other error unchanged', async () => {
+      const failure = new Error('database down');
+      execute.mockRejectedValue(failure);
+
+      await expect(controller.refresh(refreshBody, '203.0.113.7')).rejects.toBe(failure);
+    });
+  });
+
+  describe('logout', () => {
+    it('should dispatch a LogoutCommand with the token and the client IP and return nothing', async () => {
+      execute.mockResolvedValue(undefined);
+
+      await expect(
+        controller.logout({ refreshToken: 'opaque-refresh' }, '203.0.113.7'),
+      ).resolves.toBeUndefined();
+
+      expect(execute).toHaveBeenCalledWith(new LogoutCommand('opaque-refresh', '203.0.113.7'));
+    });
+
+    it('should propagate a failure so it never becomes a 204', async () => {
+      const failure = new Error('database down');
+      execute.mockRejectedValue(failure);
+
+      await expect(controller.logout({ refreshToken: 'x' }, '203.0.113.7')).rejects.toBe(failure);
     });
   });
 });

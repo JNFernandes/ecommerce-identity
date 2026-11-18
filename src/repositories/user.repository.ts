@@ -77,7 +77,13 @@ export class UserRepository {
     return entity;
   }
 
-  private static toDomain(entity: UserEntity): User {
+  /**
+   * Maps a stored user row to the domain aggregate. Public so other repositories that read users
+   * inside their own transaction (e.g. the refresh token transaction) share the same mapping.
+   *
+   * @param entity The stored row.
+   */
+  static toDomain(entity: UserEntity): User {
     return User.restore({
       id: entity.id,
       customerId: entity.customerId,

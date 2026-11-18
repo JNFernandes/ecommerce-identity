@@ -39,3 +39,23 @@ We will use **opaque refresh tokens with rotation and reuse detection**:
   its session; clients must not blindly retry refresh requests.
 - Follow-up: the refresh story adds the `refresh_tokens` table migration, the domain rules and the
   tests required by the constitution (rotation, reuse detection).
+
+## Update (US-04, 2026-11-18)
+
+Refresh and logout are implemented. The decision stands; these details were settled:
+
+- **Absolute session limit.** A family ends at its login time + `JWT_SESSION_MAX_SECONDS` (default
+  30 days). Each new refresh token expires at the earlier of now + `JWT_REFRESH_TTL_SECONDS` and
+  that limit. The session start is derived as `MIN(createdAt)` of the family, so no column or
+  migration was added, and a configuration change also applies to existing sessions.
+- **Strict reuse detection, no grace window.** Any second use of a token revokes the family; the
+  lost-response retry case is documented as a trade-off.
+- **Family lock.** Every rotation, reuse revocation and logout takes a transaction-scoped
+  PostgreSQL advisory lock on the family *before* any row lock (`findByHash` → `lockFamily` →
+  `SELECT … FOR UPDATE`). This serializes all writers of one family, so a reuse racing the
+  rotation of the newest token cannot leave a live token, and the fixed lock order rules out
+  deadlocks.
+- **Failures commit their revocations.** The refresh transaction returns a refusal instead of
+  throwing, so a family revocation commits; one generic `401` is raised after the commit.
+- **Logout revokes the family** and always answers `204` for a well-formed body.
+- **Purge deferred.** Expired and revoked rows are kept; a purge job is future work.

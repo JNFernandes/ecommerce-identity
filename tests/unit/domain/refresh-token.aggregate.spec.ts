@@ -1,3 +1,4 @@
+import { RefreshTokenState } from '../../../src/domain/refresh-token-state.enum';
 import { RefreshToken, RefreshTokenProps } from '../../../src/domain/refresh-token.aggregate';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
@@ -69,6 +70,118 @@ describe('RefreshToken', () => {
         revokedAt: token.revokedAt,
         replacedBy: token.replacedBy,
       }).toEqual(props);
+    });
+  });
+
+  describe('rotation rules', () => {
+    const FAMILY_ID = '0b9d7c1e-3f4a-4c2b-8e6d-5a1f2b3c4d5e';
+    const EXPIRES_AT = new Date('2026-11-24T12:00:00.000Z');
+    const NOW = new Date('2026-11-20T00:00:00.000Z');
+    const NEXT_ID = '9e8d7c6b-5a4f-4e3d-8c2b-1a0f9e8d7c6b';
+    const stored = (overrides: Partial<RefreshTokenProps> = {}): RefreshToken =>
+      RefreshToken.restore({
+        id: '1d2c3b4a-5e6f-4a1b-9c2d-3e4f5a6b7c8d',
+        userId: USER_ID,
+        familyId: FAMILY_ID,
+        tokenHash: HASH,
+        createdAt: ISSUED_AT,
+        expiresAt: EXPIRES_AT,
+        revokedAt: null,
+        replacedBy: null,
+        ...overrides,
+      });
+    const revoked = (): RefreshToken => stored({ revokedAt: new Date('2026-11-18T00:00:00.000Z') });
+
+    describe('assess', () => {
+      it('should be USABLE before expiry when not revoked', () => {
+        expect(stored().assess(NOW)).toBe(RefreshTokenState.USABLE);
+      });
+
+      it('should be EXPIRED exactly at expiresAt', () => {
+        expect(stored().assess(EXPIRES_AT)).toBe(RefreshTokenState.EXPIRED);
+      });
+
+      it('should be REUSED when revoked', () => {
+        expect(revoked().assess(NOW)).toBe(RefreshTokenState.REUSED);
+      });
+
+      it('should be REUSED when both revoked and expired', () => {
+        expect(revoked().assess(new Date('2026-12-01T00:00:00.000Z'))).toBe(
+          RefreshTokenState.REUSED,
+        );
+      });
+    });
+
+    describe('isUsable', () => {
+      it('should be true just before expiresAt', () => {
+        expect(stored().isUsable(new Date(EXPIRES_AT.getTime() - 1))).toBe(true);
+      });
+
+      it('should be false exactly at expiresAt', () => {
+        expect(stored().isUsable(EXPIRES_AT)).toBe(false);
+      });
+    });
+
+    describe('rotate', () => {
+      it('should set revokedAt to now and replacedBy to the successor', () => {
+        const token = stored();
+
+        token.rotate(NEXT_ID, NOW);
+
+        expect(token.revokedAt).toEqual(NOW);
+        expect(token.replacedBy).toBe(NEXT_ID);
+      });
+
+      it('should refuse to rotate a revoked token', () => {
+        expect(() => revoked().rotate(NEXT_ID, NOW)).toThrow(
+          'only a usable refresh token can be rotated',
+        );
+      });
+
+      it('should refuse to rotate an expired token', () => {
+        expect(() => stored().rotate(NEXT_ID, EXPIRES_AT)).toThrow(
+          'only a usable refresh token can be rotated',
+        );
+      });
+
+      it('should refuse an empty successor id', () => {
+        expect(() => stored().rotate('', NOW)).toThrow('successor token id must not be empty');
+      });
+    });
+
+    describe('issueInFamily', () => {
+      const issueInFamily = (tokenHash = HASH, expiresAt = EXPIRES_AT): RefreshToken =>
+        RefreshToken.issueInFamily({
+          userId: USER_ID,
+          familyId: FAMILY_ID,
+          tokenHash,
+          issuedAt: ISSUED_AT,
+          expiresAt,
+        });
+
+      it('should keep the family and get a new id', () => {
+        const previous = stored();
+        const next = issueInFamily();
+
+        expect(next.familyId).toBe(FAMILY_ID);
+        expect(next.id).toMatch(UUID);
+        expect(next.id).not.toBe(previous.id);
+        expect(next.userId).toBe(USER_ID);
+        expect(next.createdAt).toEqual(ISSUED_AT);
+        expect(next.expiresAt).toEqual(EXPIRES_AT);
+        expect(next.revokedAt).toBeNull();
+        expect(next.replacedBy).toBeNull();
+      });
+
+      it('should reject an empty hash', () => {
+        expect(() => issueInFamily('')).toThrow('refresh token hash must not be empty');
+      });
+
+      it('should reject an expiry that is not after the issue time', () => {
+        expect(() => issueInFamily(HASH, ISSUED_AT)).toThrow(
+          'refresh token must expire after it is issued',
+        );
+      });
     });
   });
 });

@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { RefreshTokenState } from './refresh-token-state.enum';
 
 /** Full state of a refresh token, as stored. The clear token value is never part of it. */
 export interface RefreshTokenProps {
@@ -32,6 +33,20 @@ export interface IssueRefreshTokenInput {
   ttlSeconds: number;
 }
 
+/** Input of {@link RefreshToken.issueInFamily}. */
+export interface IssueInFamilyInput {
+  /** Owner's user id. */
+  userId: string;
+  /** Family the successor joins. */
+  familyId: string;
+  /** SHA-256 hash of the generated opaque value. */
+  tokenHash: string;
+  /** Issue time. */
+  issuedAt: Date;
+  /** Expiry time; must be after `issuedAt`. */
+  expiresAt: Date;
+}
+
 /** The refresh token aggregate: one opaque, single-use session credential, stored hashed. */
 export class RefreshToken {
   private constructor(private readonly props: RefreshTokenProps) {}
@@ -57,6 +72,37 @@ export class RefreshToken {
       tokenHash,
       createdAt: issuedAt,
       expiresAt: new Date(issuedAt.getTime() + ttlSeconds * 1000),
+      revokedAt: null,
+      replacedBy: null,
+    });
+  }
+
+  /**
+   * Issues the successor of a rotated token: new `id`, the given family, not revoked.
+   *
+   * @param input Owner, family, hash, issue time and expiry.
+   * @throws Error When the hash is empty or `expiresAt` is not after `issuedAt`.
+   */
+  static issueInFamily({
+    userId,
+    familyId,
+    tokenHash,
+    issuedAt,
+    expiresAt,
+  }: IssueInFamilyInput): RefreshToken {
+    if (tokenHash.length === 0) {
+      throw new Error('refresh token hash must not be empty');
+    }
+    if (expiresAt.getTime() <= issuedAt.getTime()) {
+      throw new Error('refresh token must expire after it is issued');
+    }
+    return new RefreshToken({
+      id: randomUUID(),
+      userId,
+      familyId,
+      tokenHash,
+      createdAt: issuedAt,
+      expiresAt,
       revokedAt: null,
       replacedBy: null,
     });
@@ -109,5 +155,49 @@ export class RefreshToken {
   /** Successor token id, or `null`. */
   get replacedBy(): string | null {
     return this.props.replacedBy;
+  }
+
+  /**
+   * Classifies the token at `now`. Revocation is checked first, so a token that is both revoked and
+   * expired counts as reuse.
+   *
+   * @param now The current time.
+   * @returns `REUSED` if revoked, otherwise `EXPIRED` if `now >= expiresAt`, otherwise `USABLE`.
+   */
+  assess(now: Date): RefreshTokenState {
+    if (this.props.revokedAt !== null) {
+      return RefreshTokenState.REUSED;
+    }
+    if (now.getTime() >= this.props.expiresAt.getTime()) {
+      return RefreshTokenState.EXPIRED;
+    }
+    return RefreshTokenState.USABLE;
+  }
+
+  /**
+   * Whether the token may be rotated at `now`.
+   *
+   * @param now The current time.
+   */
+  isUsable(now: Date): boolean {
+    return this.assess(now) === RefreshTokenState.USABLE;
+  }
+
+  /**
+   * Marks the token as used: revoked at `now` and replaced by `newTokenId`.
+   *
+   * @param newTokenId Id of the successor token.
+   * @param now The rotation time.
+   * @throws Error When the successor id is empty or the token is not usable at `now`.
+   */
+  rotate(newTokenId: string, now: Date): void {
+    if (newTokenId.length === 0) {
+      throw new Error('successor token id must not be empty');
+    }
+    if (!this.isUsable(now)) {
+      throw new Error('only a usable refresh token can be rotated');
+    }
+    this.props.revokedAt = now;
+    this.props.replacedBy = newTokenId;
   }
 }

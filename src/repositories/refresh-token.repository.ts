@@ -10,9 +10,11 @@ import { UserRepository } from './user.repository';
  * Persistence operations available inside one refresh token transaction (see
  * {@link RefreshTokenRepository.inTransaction}).
  *
- * Lock order: always `findByHash` → `lockFamily` → `findByHashForUpdate`. Every writer of a family
- * takes the family lock before any row lock, so a rotation, a reuse revocation and a logout of the
- * same family can never deadlock.
+ * Lock order: always `findByHash` → `lockUserForShare` → `lockFamily` → `findByHashForUpdate`.
+ * Every writer of a family takes the family lock before any token row lock, so a rotation, a reuse
+ * revocation and a logout of the same family can never deadlock. The user row is share-locked
+ * first so a status change (which locks that row `FOR UPDATE` and never takes a family lock) either
+ * waits for the refresh to commit or is seen by it; no cycle is possible.
  */
 export interface RefreshTokenTx {
   /**
@@ -31,6 +33,16 @@ export interface RefreshTokenTx {
    * @returns The token as committed, or `null` when no token has this hash.
    */
   findByHashForUpdate(tokenHash: string): Promise<RefreshToken | null>;
+
+  /**
+   * Locks the user row in share mode (`SELECT 1 … FOR SHARE`) until the transaction ends, so a
+   * concurrent status change waits for this transaction, or this transaction reads the committed
+   * new status. Call right after {@link RefreshTokenTx.findByHash}, before
+   * {@link RefreshTokenTx.lockFamily}.
+   *
+   * @param userId The id of the user the token belongs to.
+   */
+  lockUserForShare(userId: string): Promise<void>;
 
   /**
    * Takes the transaction-scoped advisory lock of a family, serializing every rotation and
@@ -91,6 +103,10 @@ class EntityManagerRefreshTokenTx implements RefreshTokenTx {
       lock: { mode: 'pessimistic_write' },
     });
     return entity === null ? null : RefreshTokenRepository.toDomain(entity);
+  }
+
+  async lockUserForShare(userId: string): Promise<void> {
+    await this.manager.query('SELECT 1 FROM "users" WHERE "id" = $1 FOR SHARE', [userId]);
   }
 
   async lockFamily(familyId: string): Promise<void> {

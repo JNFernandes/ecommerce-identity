@@ -32,9 +32,10 @@ type RefreshOutcome =
  * token in the same family. Orchestration only; the rules live in `RefreshPolicy`, `RefreshToken`
  * and `TokenFamily`.
  *
- * Everything runs in one transaction under the family lock. A refusal is returned from the
- * transaction, not thrown inside it, so a family revocation commits; the single generic
- * `InvalidRefreshTokenError` is thrown only after the commit.
+ * Everything runs in one transaction under a share lock on the user row (so a concurrent disable
+ * cannot slip between the status check and the rotation) and the family lock. A refusal is
+ * returned from the transaction, not thrown inside it, so a family revocation commits; the single
+ * generic `InvalidRefreshTokenError` is thrown only after the commit.
  */
 @CommandHandler(RefreshCommand)
 export class RefreshService implements ICommandHandler<RefreshCommand, LoginResult> {
@@ -95,6 +96,7 @@ export class RefreshService implements ICommandHandler<RefreshCommand, LoginResu
       return { kind: 'refused', reason: RefreshFailureReason.UNKNOWN };
     }
     const ids: AttemptIds = { userId: found.userId, familyId: found.familyId };
+    await tx.lockUserForShare(found.userId);
     await tx.lockFamily(found.familyId);
     const token = await tx.findByHashForUpdate(tokenHash);
     const user = token === null ? null : await tx.findUserById(token.userId);

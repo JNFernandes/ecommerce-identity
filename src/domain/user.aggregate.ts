@@ -208,6 +208,22 @@ export class User {
   }
 
   /**
+   * Re-enables the account. Setting the status the user already has is a no-op. Refresh tokens
+   * revoked by an earlier disable stay revoked; the user logs in again.
+   *
+   * @param at The change time, written to `updatedAt` only when the status changes.
+   * @returns `true` when the status changed, `false` when the user was already `ACTIVE`.
+   */
+  enable(at: Date): boolean {
+    if (this.props.status === UserStatus.ACTIVE) {
+      return false;
+    }
+    this.props.status = UserStatus.ACTIVE;
+    this.props.updatedAt = at;
+    return true;
+  }
+
+  /**
    * Returns the events raised since the last call and clears them, so each event is published
    * once.
    */

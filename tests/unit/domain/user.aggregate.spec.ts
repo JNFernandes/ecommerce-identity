@@ -262,6 +262,31 @@ describe('User', () => {
       });
     });
 
+    describe('enable', () => {
+      it('should enable a DISABLED user, set updatedAt and return true', () => {
+        const user = stored(UserStatus.DISABLED);
+        const before = untouchedFields(user);
+
+        expect(user.enable(AT)).toBe(true);
+
+        expect(user.status).toBe(UserStatus.ACTIVE);
+        expect(user.updatedAt).toEqual(AT);
+        expect(user.canLogin()).toBe(true);
+        expect(untouchedFields(user)).toEqual(before);
+      });
+
+      it('should change nothing and return false for an ACTIVE user', () => {
+        const user = stored(UserStatus.ACTIVE);
+        const before = untouchedFields(user);
+
+        expect(user.enable(AT)).toBe(false);
+
+        expect(user.status).toBe(UserStatus.ACTIVE);
+        expect(user.updatedAt).toEqual(UPDATED_AT);
+        expect(untouchedFields(user)).toEqual(before);
+      });
+    });
+
     describe('isActiveAdmin', () => {
       it.each([
         ['an ACTIVE admin', UserStatus.ACTIVE, [Role.ADMIN], true],

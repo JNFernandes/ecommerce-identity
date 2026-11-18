@@ -1,16 +1,29 @@
-import { Controller, Get, NotFoundException, Param, ParseUUIDPipe, Query } from '@nestjs/common';
-import { QueryBus } from '@nestjs/cqrs';
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  NotFoundException,
+  Param,
+  ParseUUIDPipe,
+  Patch,
+  Query,
+} from '@nestjs/common';
+import { CommandBus, QueryBus } from '@nestjs/cqrs';
 import {
   ApiBadRequestResponse,
+  ApiConflictResponse,
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
   ApiParam,
   ApiTags,
 } from '@nestjs/swagger';
+import { ChangeUserStatusCommand } from '../commands/change-user-status.command';
 import { AuthenticatedPrincipal } from '../domain/authenticated-principal';
 import { UserNotFoundError } from '../domain/errors/user-not-found.error';
 import { Role } from '../domain/role.enum';
+import { ChangeUserStatusDto } from '../dto/change-user-status.dto';
 import { CurrentUserResponseDto } from '../dto/current-user-response.dto';
 import { ListUsersQueryDto } from '../dto/list-users-query.dto';
 import { UserPageResponseDto } from '../dto/user-page-response.dto';
@@ -27,8 +40,14 @@ import { Roles } from './auth/roles.decorator';
 @ApiTags('users')
 @Controller('users')
 export class UsersController {
-  /** @param queryBus Dispatches the read queries. */
-  constructor(private readonly queryBus: QueryBus) {}
+  /**
+   * @param queryBus Dispatches the read queries.
+   * @param commandBus Dispatches the status change command.
+   */
+  constructor(
+    private readonly queryBus: QueryBus,
+    private readonly commandBus: CommandBus,
+  ) {}
 
   /**
    * Lists users for admins, newest first, optionally filtered by role, status and email prefix.
@@ -98,6 +117,57 @@ export class UsersController {
     try {
       const user = await this.queryBus.execute<GetUserQuery, UserSummaryReadModel>(
         new GetUserQuery(id),
+      );
+      return UserSummaryResponseDto.from(user);
+    } catch (error) {
+      if (error instanceof UserNotFoundError) {
+        throw new NotFoundException(error.message);
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Sets a user's status for admins. Disabling revokes every refresh token of the user in the same
+   * transaction; enabling restores login but leaves revoked tokens revoked. Setting the current
+   * status is a no-op that still returns 200.
+   *
+   * @param id The user id; a malformed id is rejected with 400 by `ParseUUIDPipe`.
+   * @param dto The requested status, already validated.
+   * @param principal The acting admin.
+   * @throws NotFoundException When no user has this id.
+   */
+  @Patch(':id/status')
+  @Roles(Role.ADMIN)
+  @HttpCode(200)
+  @ApiOperation({
+    summary: 'Enable or disable a user',
+    description:
+      'Admins only. `DISABLED` blocks login, refresh and `GET /users/me` at once and revokes ' +
+      'every refresh token of the user; access tokens already issued stay valid on token-only ' +
+      'routes until they expire. `ACTIVE` restores login; revoked tokens stay revoked. Setting ' +
+      'the current status changes nothing. An admin cannot disable their own account, and the ' +
+      'last active admin cannot be disabled. No event is published.',
+  })
+  @ApiParam({ name: 'id', format: 'uuid', description: 'User id' })
+  @ApiOkResponse({ type: UserSummaryResponseDto, description: 'The user after the request' })
+  @ApiBadRequestResponse({
+    description:
+      '`id` is not a UUID, `status` is missing or not `ACTIVE`/`DISABLED`, an unknown field ' +
+      'was sent, or the body is not valid JSON',
+  })
+  @ApiNotFoundResponse({ description: 'No user has this id' })
+  @ApiConflictResponse({
+    description: 'The admin targets their own account, or the target is the last active admin',
+  })
+  async changeStatus(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: ChangeUserStatusDto,
+    @CurrentUser() principal: AuthenticatedPrincipal,
+  ): Promise<UserSummaryResponseDto> {
+    try {
+      const user = await this.commandBus.execute<ChangeUserStatusCommand, UserSummaryReadModel>(
+        new ChangeUserStatusCommand(id, dto.status, principal.userId),
       );
       return UserSummaryResponseDto.from(user);
     } catch (error) {

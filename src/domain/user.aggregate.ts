@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { Email } from './email.value-object';
+import { CannotDisableSelfError } from './errors/cannot-disable-self.error';
 import { InvalidCredentialsError } from './errors/invalid-credentials.error';
 import { UserRegistered } from './events/user-registered.event';
 import { Role } from './role.enum';
@@ -178,6 +179,32 @@ export class User {
       throw new InvalidCredentialsError();
     }
     this.props.lastLoginAt = at;
+  }
+
+  /** Whether the user is an `ACTIVE` holder of the `ADMIN` role. */
+  isActiveAdmin(): boolean {
+    return this.props.status === UserStatus.ACTIVE && this.props.roles.includes(Role.ADMIN);
+  }
+
+  /**
+   * Disables the account on behalf of an admin. Setting the status the user already has is a
+   * no-op. The self rule is checked first, so it applies even when the user is already disabled.
+   *
+   * @param actingAdminId The id of the admin making the change.
+   * @param at The change time, written to `updatedAt` only when the status changes.
+   * @returns `true` when the status changed, `false` when the user was already `DISABLED`.
+   * @throws CannotDisableSelfError When the admin targets their own account.
+   */
+  disable(actingAdminId: string, at: Date): boolean {
+    if (this.props.id === actingAdminId) {
+      throw new CannotDisableSelfError();
+    }
+    if (this.props.status === UserStatus.DISABLED) {
+      return false;
+    }
+    this.props.status = UserStatus.DISABLED;
+    this.props.updatedAt = at;
+    return true;
   }
 
   /**

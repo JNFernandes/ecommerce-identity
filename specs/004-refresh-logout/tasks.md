@@ -141,7 +141,7 @@ description: "Task list for US-04: Refresh the session and log out"
 - [X] T028 [P] Update `README.md`: document `POST /auth/refresh` and `POST /auth/logout`; add `JWT_SESSION_MAX_SECONDS`, `RATE_LIMIT_REFRESH_*`, `RATE_LIMIT_LOGOUT_*` to the configuration table; add trade-offs (access tokens valid after logout until `exp`, strict reuse with no grace window, expired rows not purged) (FR-013). Commit `docs(US-04): document refresh, logout and their trade-offs`.
 - [X] T029 [P] Add `JWT_SESSION_MAX_SECONDS=2592000`, `RATE_LIMIT_REFRESH_LIMIT`, `RATE_LIMIT_REFRESH_TTL_MS`, `RATE_LIMIT_LOGOUT_LIMIT`, `RATE_LIMIT_LOGOUT_TTL_MS` with comments to `.env.example` (FR-015). Commit `docs(US-04): add session and rate limit settings to .env.example`.
 - [X] T030 [P] Add a dated "Update (US-04)" section to `docs/adr/0002-refresh-token-rotation-with-reuse-detection.md` (session limit and derived start, strict reuse, family advisory lock, logout revokes the family, purge deferred) and refresh its line in `docs/adr/README.md` if the summary changes (R20). Commit `docs(US-04): record the US-04 update in ADR 0002`.
-- [ ] T031 [P] Update `src/README.md` with the new endpoints, `RefreshService`/`LogoutService`, `TokenFamily` and `RefreshTokenTx`. Commit `docs(US-04): list refresh and logout in the module README`.
+- [X] T031 [P] Update `src/README.md` with the new endpoints, `RefreshService`/`LogoutService`, `TokenFamily` and `RefreshTokenTx`. Commit `docs(US-04): list refresh and logout in the module README`.
 - [ ] T032 Run `specs/004-refresh-logout/quickstart.md` manually against `npm run start:dev` and record the results (date, pass/fail per step) at the end of the quickstart. Commit `docs(US-04): record the manual quickstart run`.
 
 ---

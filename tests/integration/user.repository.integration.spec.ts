@@ -365,4 +365,24 @@ describe('UserRepository (integration)', () => {
       expect(admin.createdAt).toEqual(new Date('2026-11-18T10:03:00.000Z'));
     });
   });
+
+  describe('findSummaryById', () => {
+    it('should return the same read model as the list item', async () => {
+      await dataSource.query('DELETE FROM "users"');
+      const user = stored('summary@example.com', '2026-11-18T11:00:00.000Z');
+      await repository.save(user);
+
+      const summary = await repository.findSummaryById(user.id);
+      const [item] = (await repository.findPage(new ListUsersQuery(1, 0))).items;
+
+      expect(summary).toEqual(item);
+      expect(summary).not.toHaveProperty('passwordHash');
+    });
+
+    it('should return null for an unknown id', async () => {
+      await expect(
+        repository.findSummaryById('00000000-0000-4000-8000-0000000000ff'),
+      ).resolves.toBeNull();
+    });
+  });
 });

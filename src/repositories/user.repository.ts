@@ -115,6 +115,17 @@ export class UserRepository {
     };
   }
 
+  /**
+   * Reads one user as the admin read model (same shape as a `findPage` item).
+   *
+   * @param id The user id.
+   * @returns The user, or `null` when none has this id.
+   */
+  async findSummaryById(id: string): Promise<UserSummaryReadModel | null> {
+    const entity = await this.repository.findOneBy({ id });
+    return entity === null ? null : UserRepository.toSummary(entity);
+  }
+
   /** Maps a stored row to the admin read model; the hash and `updatedAt` are left out. */
   private static toSummary(entity: UserEntity): UserSummaryReadModel {
     return {

@@ -1,4 +1,4 @@
-import { INestApplication, LoggerService } from '@nestjs/common';
+import { Abstract, INestApplication, LoggerService } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { generateKeyPairSync, KeyObject } from 'crypto';
 import { mkdtempSync, writeFileSync } from 'fs';
@@ -122,9 +122,29 @@ export async function useUnreachableKafka(): Promise<void> {
   process.env.KAFKA_CONNECTION_TIMEOUT_MS = '200';
 }
 
-/** Builds and initializes the full application exactly as `main.ts` configures it. */
-export async function createTestApp(logger?: LoggerService): Promise<INestApplication> {
-  const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
+/** A provider replaced in the test app, e.g. the `Clock`. */
+export interface ProviderOverride {
+  /** The injection token to replace. */
+  provide: Abstract<unknown>;
+  /** The value used instead. */
+  useValue: unknown;
+}
+
+/**
+ * Builds and initializes the full application exactly as `main.ts` configures it.
+ *
+ * @param logger Optional logger capturing the app's output.
+ * @param overrides Providers to replace (e.g. a controllable `Clock`).
+ */
+export async function createTestApp(
+  logger?: LoggerService,
+  overrides: readonly ProviderOverride[] = [],
+): Promise<INestApplication> {
+  const builder = Test.createTestingModule({ imports: [AppModule] });
+  for (const { provide, useValue } of overrides) {
+    builder.overrideProvider(provide).useValue(useValue);
+  }
+  const moduleRef = await builder.compile();
   if (logger !== undefined) {
     moduleRef.useLogger(logger);
   }

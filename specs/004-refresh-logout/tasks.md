@@ -107,7 +107,7 @@ description: "Task list for US-04: Refresh the session and log out"
 **Independent Test**: With a short session limit, refresh near and past the limit.
 
 - [X] T019 [US4] Extend `tests/unit/services/refresh.service.spec.ts`: near the cap the new `expiresAt` equals `familyStartedAt + sessionMaxSeconds`; past the cap the handler throws `SESSION_EXPIRED` and issues nothing. Commit `test(US-04): cover the session limit in the handler`.
-- [ ] T020 [US4] Component test `tests/component/refresh-session-limit.component.spec.ts`: start the app with `JWT_SESSION_MAX_SECONDS` = `JWT_REFRESH_TTL_SECONDS` = 60 and a controllable `Clock` override; refresh at +30 s → new row `expiresAt` = login + 60 s; at +61 s → 401. Startup with `JWT_SESSION_MAX_SECONDS` below the refresh TTL fails with the T001 message. Commit `test(US-04): cover the absolute session limit end to end`.
+- [X] T020 [US4] Component test `tests/component/refresh-session-limit.component.spec.ts`: start the app with `JWT_SESSION_MAX_SECONDS` = `JWT_REFRESH_TTL_SECONDS` = 60 and a controllable `Clock` override; refresh at +30 s → new row `expiresAt` = login + 60 s; at +61 s → 401. Startup with `JWT_SESSION_MAX_SECONDS` below the refresh TTL fails with the T001 message. Commit `test(US-04): cover the absolute session limit end to end`.
 
 ---
 

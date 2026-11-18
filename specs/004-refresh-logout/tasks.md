@@ -129,7 +129,7 @@ description: "Task list for US-04: Refresh the session and log out"
 
 **Independent Test**: Exceed each limit from one IP and check 429.
 
-- [ ] T024 [US6] Add `REFRESH_THROTTLER = 'refresh'` and `LOGOUT_THROTTLER = 'logout'` (JSDoc) to `src/controllers/login-throttle.tracker.ts`; register both throttlers keyed by IP from `rateLimit.refresh`/`rateLimit.logout` in `src/app.module.ts`; add `@UseGuards(ThrottlerGuard)` to refresh and logout and update every `@SkipThrottle` in `src/controllers/auth.controller.ts` so each route skips all throttlers except its own (R16); add `@ApiTooManyRequestsResponse` to both. Existing register/login rate-limit component tests must stay green. Commit `feat(US-04): rate limit refresh and logout per IP`.
+- [X] T024 [US6] Add `REFRESH_THROTTLER = 'refresh'` and `LOGOUT_THROTTLER = 'logout'` (JSDoc) to `src/controllers/login-throttle.tracker.ts`; register both throttlers keyed by IP from `rateLimit.refresh`/`rateLimit.logout` in `src/app.module.ts`; add `@UseGuards(ThrottlerGuard)` to refresh and logout and update every `@SkipThrottle` in `src/controllers/auth.controller.ts` so each route skips all throttlers except its own (R16); add `@ApiTooManyRequestsResponse` to both. Existing register/login rate-limit component tests must stay green. Commit `feat(US-04): rate limit refresh and logout per IP`.
 - [ ] T025 [US6] Component test `tests/component/refresh-logout-rate-limit.component.spec.ts` with low limits (e.g. 2 per minute): third refresh from one IP → 429 and no token row read/changed; third logout → 429; refresh traffic does not consume the login or logout buckets. Commit `test(US-04): cover refresh and logout rate limits`.
 
 ---

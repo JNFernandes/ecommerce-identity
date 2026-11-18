@@ -1,7 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { DataSource, EntityManager, IsNull } from 'typeorm';
+import { InvalidCredentialsError } from '../domain/errors/invalid-credentials.error';
 import { RefreshToken } from '../domain/refresh-token.aggregate';
 import { User } from '../domain/user.aggregate';
+import { UserStatus } from '../domain/user-status.enum';
 import { RefreshTokenEntity } from '../infra/database/entities/refresh-token.entity';
 import { UserEntity } from '../infra/database/entities/user.entity';
 import { UserRepository } from './user.repository';
@@ -159,14 +161,24 @@ export class RefreshTokenRepository {
 
   /**
    * Stores a newly issued token and the user's `lastLoginAt` in one transaction: either both are
-   * committed or neither is. Only the `lastLoginAt` column of the user is written.
+   * committed or neither is. Only the `lastLoginAt` column of the user is written, and only while
+   * the user is still `ACTIVE`: the update re-checks the status after waiting on any concurrent
+   * status change's row lock, so a user disabled after the password check gets no token.
    *
    * @param token The issued token (holds the hash, never the value).
    * @param user The user who logged in, after `recordLogin`.
+   * @throws InvalidCredentialsError When the user is no longer `ACTIVE` (nothing is written).
    */
   async saveWithLogin(token: RefreshToken, user: User): Promise<void> {
     await this.dataSource.transaction(async (manager) => {
-      await manager.update(UserEntity, { id: user.id }, { lastLoginAt: user.lastLoginAt });
+      const result = await manager.update(
+        UserEntity,
+        { id: user.id, status: UserStatus.ACTIVE },
+        { lastLoginAt: user.lastLoginAt },
+      );
+      if ((result.affected ?? 0) === 0) {
+        throw new InvalidCredentialsError();
+      }
       await manager.insert(RefreshTokenEntity, RefreshTokenRepository.toEntity(token));
     });
   }

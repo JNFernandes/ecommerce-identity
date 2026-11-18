@@ -2,6 +2,7 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import { DataSource } from 'typeorm';
 import { PostgreSqlContainer, StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import { Email } from '../../src/domain/email.value-object';
+import { InvalidCredentialsError } from '../../src/domain/errors/invalid-credentials.error';
 import { RefreshToken } from '../../src/domain/refresh-token.aggregate';
 import { User } from '../../src/domain/user.aggregate';
 import { UserName } from '../../src/domain/user-name.value-object';
@@ -100,6 +101,25 @@ describe('RefreshTokenRepository (integration)', () => {
       },
     ]);
     expect(await lastLoginAt(user.id)).toEqual(loginAt);
+  });
+
+  it('should refuse to store a login for a DISABLED user and write nothing', async () => {
+    const user = await savedCustomer('disabled-login@example.com');
+    const loginAt = new Date('2026-11-17T14:00:00.000Z');
+    user.recordLogin(loginAt);
+    // The user passed the status check, then got disabled before the token was stored.
+    await dataSource.query(`UPDATE "users" SET "status" = 'DISABLED' WHERE "id" = $1`, [user.id]);
+
+    await expect(
+      repository.saveWithLogin(tokenFor(user, 'd'.repeat(64), loginAt), user),
+    ).rejects.toBeInstanceOf(InvalidCredentialsError);
+
+    const rows: TokenRow[] = await dataSource.query(
+      `SELECT * FROM "refresh_tokens" WHERE "userId" = $1`,
+      [user.id],
+    );
+    expect(rows).toEqual([]);
+    expect(await lastLoginAt(user.id)).toBeNull();
   });
 
   it('should roll back the last login time when the token cannot be stored', async () => {

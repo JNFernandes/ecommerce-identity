@@ -136,7 +136,7 @@ description: "Task list for US-04: Refresh the session and log out"
 
 ## Phase 9: Polish & cross-cutting
 
-- [ ] T026 [P] Component test `tests/component/refresh-logout-kafka-unavailable.component.spec.ts`: with `useUnreachableKafka()`, a seeded user logs in, refreshes (200) and logs out (204) (FR-012, SC-008). Commit `test(US-04): cover refresh and logout with Kafka unreachable`.
+- [X] T026 [P] Component test `tests/component/refresh-logout-kafka-unavailable.component.spec.ts`: with `useUnreachableKafka()`, a seeded user logs in, refreshes (200) and logs out (204) (FR-012, SC-008). Commit `test(US-04): cover refresh and logout with Kafka unreachable`.
 - [ ] T027 [P] Component test `tests/component/refresh-logout-logging.component.spec.ts` using `tests/component/support/capturing-logger.ts`: run success, reuse, unknown, 400, 429 and logout flows; no captured line or error body contains any refresh token value, its SHA-256 hash, an access token or an `Authorization` header (FR-011, SC-007). Commit `test(US-04): assert no tokens in logs or error bodies`.
 - [ ] T028 [P] Update `README.md`: document `POST /auth/refresh` and `POST /auth/logout`; add `JWT_SESSION_MAX_SECONDS`, `RATE_LIMIT_REFRESH_*`, `RATE_LIMIT_LOGOUT_*` to the configuration table; add trade-offs (access tokens valid after logout until `exp`, strict reuse with no grace window, expired rows not purged) (FR-013). Commit `docs(US-04): document refresh, logout and their trade-offs`.
 - [ ] T029 [P] Add `JWT_SESSION_MAX_SECONDS=2592000`, `RATE_LIMIT_REFRESH_LIMIT`, `RATE_LIMIT_REFRESH_TTL_MS`, `RATE_LIMIT_LOGOUT_LIMIT`, `RATE_LIMIT_LOGOUT_TTL_MS` with comments to `.env.example` (FR-015). Commit `docs(US-04): add session and rate limit settings to .env.example`.

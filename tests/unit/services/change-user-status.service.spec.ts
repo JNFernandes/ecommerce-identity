@@ -1,3 +1,4 @@
+import { AuditRecord } from '../../../src/domain/audit/audit-record';
 import { Logger } from '@nestjs/common';
 import { ChangeUserStatusCommand } from '../../../src/commands/change-user-status.command';
 import { Email } from '../../../src/domain/email.value-object';
@@ -12,7 +13,7 @@ import { Role } from '../../../src/domain/role.enum';
 import { User } from '../../../src/domain/user.aggregate';
 import { UserName } from '../../../src/domain/user-name.value-object';
 import { UserStatus } from '../../../src/domain/user-status.enum';
-import { UserRepository, UserStatusTx } from '../../../src/repositories/user.repository';
+import { UserRepository, AdminTx } from '../../../src/repositories/user.repository';
 import { ChangeUserStatusService } from '../../../src/services/change-user-status.service';
 import { Clock } from '../../../src/services/ports/clock';
 
@@ -39,8 +40,8 @@ function stored(id: string, email: string, role: Role, status: UserStatus): User
   });
 }
 
-/** In-memory {@link UserStatusTx} that records every call. */
-class FakeTx implements UserStatusTx {
+/** In-memory {@link AdminTx} that records every call. */
+class FakeTx implements AdminTx {
   readonly calls: string[] = [];
   readonly saved: User[] = [];
   revokedCount = 3;
@@ -48,8 +49,8 @@ class FakeTx implements UserStatusTx {
 
   constructor(private readonly users: Map<string, User>) {}
 
-  lockStatusChanges(): Promise<void> {
-    this.calls.push('lockStatusChanges');
+  lockAdminChanges(): Promise<void> {
+    this.calls.push('lockAdminChanges');
     return Promise.resolve();
   }
 
@@ -79,10 +80,24 @@ class FakeTx implements UserStatusTx {
     return Promise.resolve(this.revokedCount);
   }
 
+  insertUser(user: User): Promise<void> {
+    this.calls.push(`insertUser:${user.id}`);
+    return Promise.resolve();
+  }
+
+  appendAudit(record: AuditRecord): Promise<void> {
+    this.calls.push(`appendAudit:${record.action}`);
+    return Promise.resolve();
+  }
+
   /** Whether any write happened. */
   wrote(): boolean {
     return this.calls.some(
-      (call) => call === 'saveStatus' || call.startsWith('revokeAllRefreshTokens'),
+      (call) =>
+        call === 'saveStatus' ||
+        call.startsWith('revokeAllRefreshTokens') ||
+        call.startsWith('insertUser') ||
+        call.startsWith('appendAudit'),
     );
   }
 }
@@ -98,7 +113,7 @@ describe('ChangeUserStatusService', () => {
   function setUp(...users: User[]): void {
     tx = new FakeTx(new Map(users.map((user) => [user.id, user])));
     const repository = {
-      inStatusTransaction: <T>(work: (t: UserStatusTx) => Promise<T>): Promise<T> => work(tx),
+      inAdminTransaction: <T>(work: (t: AdminTx) => Promise<T>): Promise<T> => work(tx),
     } as unknown as UserRepository;
     service = new ChangeUserStatusService(repository, { now: () => NOW } as Clock);
   }
@@ -125,7 +140,7 @@ describe('ChangeUserStatusService', () => {
       await change(CUSTOMER_ID, UserStatus.DISABLED);
 
       expect(tx.calls).toEqual([
-        'lockStatusChanges',
+        'lockAdminChanges',
         `findById:${ADMIN_ID}`,
         `findByIdForUpdate:${CUSTOMER_ID}`,
         'saveStatus',
@@ -223,7 +238,7 @@ describe('ChangeUserStatusService', () => {
       });
 
       expect(tx.calls).toEqual([
-        'lockStatusChanges',
+        'lockAdminChanges',
         `findById:${ADMIN_ID}`,
         `findByIdForUpdate:${OTHER_ADMIN_ID}`,
         'countActiveAdmins',
@@ -274,7 +289,7 @@ describe('ChangeUserStatusService', () => {
       });
 
       expect(tx.calls).toEqual([
-        'lockStatusChanges',
+        'lockAdminChanges',
         `findById:${ADMIN_ID}`,
         `findByIdForUpdate:${CUSTOMER_ID}`,
         'saveStatus',
@@ -326,7 +341,7 @@ describe('ChangeUserStatusService', () => {
       expect((error as InvalidAccessTokenError).reason).toBe(
         AccessTokenFailureReason.USER_UNAVAILABLE,
       );
-      expect(tx.calls).toEqual(['lockStatusChanges', `findById:${ADMIN_ID}`]);
+      expect(tx.calls).toEqual(['lockAdminChanges', `findById:${ADMIN_ID}`]);
       expect(loggedLines()).toEqual([]);
     });
 

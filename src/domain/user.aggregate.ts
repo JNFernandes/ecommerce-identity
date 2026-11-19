@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { Email } from './email.value-object';
 import { CannotDisableSelfError } from './errors/cannot-disable-self.error';
 import { InvalidCredentialsError } from './errors/invalid-credentials.error';
+import { UserValidationError } from './errors/user-validation.error';
 import { UserRegistered } from './events/user-registered.event';
 import { Role } from './role.enum';
 import { UserName } from './user-name.value-object';
@@ -88,6 +89,49 @@ export class User {
    * @param passwordHash The argon2id hash of a password that passed `PasswordPolicy`.
    */
   static registerAdmin(email: Email, name: UserName, passwordHash: string): User {
+    return User.newAdmin(email, name, passwordHash);
+  }
+
+  /**
+   * Creates a user on an admin's request (`POST /users`). One role per user: exactly
+   * `[CUSTOMER]` creates a customer as registration does (new `customerId`, records
+   * `UserRegistered`); exactly `[ADMIN]` creates an admin (no `customerId`, no event).
+   *
+   * @param email The validated, normalized email.
+   * @param name The validated, trimmed name.
+   * @param passwordHash The argon2id hash of a password that passed `PasswordPolicy`.
+   * @param roles The requested roles.
+   * @throws UserValidationError When `roles` is not exactly `[CUSTOMER]` or `[ADMIN]`.
+   */
+  static createByAdmin(
+    email: Email,
+    name: UserName,
+    passwordHash: string,
+    roles: readonly Role[],
+  ): User {
+    const role = User.assertRolesForAdminCreation(roles);
+    return role === Role.CUSTOMER
+      ? User.registerCustomer(email, name, passwordHash)
+      : User.newAdmin(email, name, passwordHash);
+  }
+
+  /**
+   * Checks the one-role-per-user rule of {@link User.createByAdmin} on its own, so a caller can
+   * reject bad roles before paying for anything else (e.g. password hashing).
+   *
+   * @param roles The requested roles.
+   * @returns The single role.
+   * @throws UserValidationError When `roles` is not exactly `[CUSTOMER]` or `[ADMIN]`.
+   */
+  static assertRolesForAdminCreation(roles: readonly Role[]): Role {
+    if (roles.length === 1 && (roles[0] === Role.CUSTOMER || roles[0] === Role.ADMIN)) {
+      return roles[0];
+    }
+    throw new UserValidationError('roles must be exactly one of CUSTOMER or ADMIN');
+  }
+
+  /** A new `ACTIVE` admin without `customerId` and without event. */
+  private static newAdmin(email: Email, name: UserName, passwordHash: string): User {
     const now = new Date();
     return new User({
       id: randomUUID(),

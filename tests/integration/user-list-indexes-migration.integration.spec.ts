@@ -5,6 +5,8 @@ import { buildDataSourceOptions } from '../../src/infra/database/typeorm-options
 jest.setTimeout(180_000);
 
 const MIGRATION = 'AddUserListIndexes20261118120000';
+/** Later migrations, undone first so this one can be reverted. */
+const LATER_MIGRATIONS = ['CreateAuditRecords20261119120000'];
 
 /** Definitions of the US-06 indexes on `users`, keyed by name. */
 async function listIndexes(dataSource: DataSource): Promise<Record<string, string>> {
@@ -52,11 +54,13 @@ describe('user list indexes migration (integration)', () => {
   });
 
   it('should drop both indexes on down and re-apply cleanly', async () => {
-    await dataSource.undoLastMigration();
+    for (let undone = 0; undone <= LATER_MIGRATIONS.length; undone += 1) {
+      await dataSource.undoLastMigration();
+    }
 
     expect(await listIndexes(dataSource)).toEqual({});
 
     const applied = await dataSource.runMigrations();
-    expect(applied.map((migration) => migration.name)).toEqual([MIGRATION]);
+    expect(applied.map((migration) => migration.name)).toEqual([MIGRATION, ...LATER_MIGRATIONS]);
   });
 });

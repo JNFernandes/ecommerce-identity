@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { EntityManager, IsNull, Repository } from 'typeorm';
+import { AuditRecord } from '../domain/audit/audit-record';
 import { Email } from '../domain/email.value-object';
 import { DuplicateEmailError } from '../domain/errors/duplicate-email.error';
 import { Role } from '../domain/role.enum';
@@ -14,26 +15,26 @@ import { UserPageReadModel, UserSummaryReadModel } from '../queries/user-summary
 import { isUniqueViolation } from './errors/is-unique-violation';
 
 /**
- * Key of the transaction-scoped advisory lock that serializes every user status change, as the two
- * 32-bit integers of `pg_advisory_xact_lock(int, int)`. That key space never overlaps the 64-bit
- * keys of the refresh token family locks.
+ * Key of the transaction-scoped advisory lock that serializes every admin mutation (status
+ * changes, user creation), as the two 32-bit integers of `pg_advisory_xact_lock(int, int)`. That
+ * key space never overlaps the 64-bit keys of the refresh token family locks.
  */
-export const USER_STATUS_LOCK_KEY: readonly [number, number] = [0x1d_57a7, 1];
+export const ADMIN_CHANGES_LOCK_KEY: readonly [number, number] = [0x1d_57a7, 1];
 
 /**
- * Persistence operations available inside one status change transaction (see
- * {@link UserRepository.inStatusTransaction}).
+ * Persistence operations available inside one admin transaction (see
+ * {@link UserRepository.inAdminTransaction}).
  *
- * Lock order: always `lockStatusChanges` → `findById` (acting admin, no lock) →
+ * Lock order: always `lockAdminChanges` → `findById` (acting admin, no lock) →
  * `findByIdForUpdate` (target row) → writes. The advisory lock is taken before any row lock, so
- * two status changes never wait on each other's rows and cannot deadlock.
+ * two admin mutations never wait on each other's rows and cannot deadlock.
  */
-export interface UserStatusTx {
+export interface AdminTx {
   /**
-   * Takes the transaction-scoped advisory lock that serializes every status change. Released on
+   * Takes the transaction-scoped advisory lock that serializes every admin mutation. Released on
    * commit or rollback.
    */
-  lockStatusChanges(): Promise<void>;
+  lockAdminChanges(): Promise<void>;
 
   /**
    * Reads a user without locking it.
@@ -70,15 +71,30 @@ export interface UserStatusTx {
    * @returns The number of tokens revoked.
    */
   revokeAllRefreshTokens(userId: string, at: Date): Promise<number>;
+
+  /**
+   * Inserts a new user. A unique violation (email taken, case-insensitive) aborts the transaction.
+   *
+   * @param user The new user.
+   * @throws DuplicateEmailError When another user already has the email.
+   */
+  insertUser(user: User): Promise<void>;
+
+  /**
+   * Appends one audit record (insert only; the table rejects updates and deletes).
+   *
+   * @param record The record of the change made in this transaction.
+   */
+  appendAudit(record: AuditRecord): Promise<void>;
 }
 
-/** {@link UserStatusTx} bound to one TypeORM transaction manager. */
-class EntityManagerUserStatusTx implements UserStatusTx {
+/** {@link AdminTx} bound to one TypeORM transaction manager. */
+class EntityManagerAdminTx implements AdminTx {
   constructor(private readonly manager: EntityManager) {}
 
-  async lockStatusChanges(): Promise<void> {
+  async lockAdminChanges(): Promise<void> {
     await this.manager.query('SELECT pg_advisory_xact_lock($1::int, $2::int)', [
-      ...USER_STATUS_LOCK_KEY,
+      ...ADMIN_CHANGES_LOCK_KEY,
     ]);
   }
 
@@ -118,6 +134,34 @@ class EntityManagerUserStatusTx implements UserStatusTx {
       { revokedAt: at },
     );
     return result.affected ?? 0;
+  }
+
+  async insertUser(user: User): Promise<void> {
+    try {
+      await this.manager.insert(UserEntity, UserRepository.toEntity(user));
+    } catch (error) {
+      if (isUniqueViolation(error)) {
+        throw new DuplicateEmailError();
+      }
+      throw error;
+    }
+  }
+
+  async appendAudit(record: AuditRecord): Promise<void> {
+    // A plain INSERT: the table is append-only, so nothing here may ever update a row.
+    await this.manager.query(
+      `INSERT INTO "audit_records" ("id", "actorId", "action", "targetId", "before", "after", "occurredAt")
+       VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7)`,
+      [
+        record.id,
+        record.actorId,
+        record.action,
+        record.targetId,
+        record.before === null ? null : JSON.stringify(record.before),
+        JSON.stringify(record.after),
+        record.occurredAt,
+      ],
+    );
   }
 }
 
@@ -192,15 +236,15 @@ export class UserRepository {
 
   /**
    * Runs `work` in one database transaction (READ COMMITTED). Everything `work` does through the
-   * given {@link UserStatusTx} commits when it resolves and rolls back when it rejects. Callers
-   * take the locks in the order documented on {@link UserStatusTx}.
+   * given {@link AdminTx} commits when it resolves and rolls back when it rejects. Callers
+   * take the locks in the order documented on {@link AdminTx}.
    *
    * @param work The unit of work; its result is returned after the commit.
    * @returns What `work` resolved to.
    */
-  async inStatusTransaction<T>(work: (tx: UserStatusTx) => Promise<T>): Promise<T> {
+  async inAdminTransaction<T>(work: (tx: AdminTx) => Promise<T>): Promise<T> {
     return this.repository.manager.transaction((manager) =>
-      work(new EntityManagerUserStatusTx(manager)),
+      work(new EntityManagerAdminTx(manager)),
     );
   }
 
@@ -264,7 +308,13 @@ export class UserRepository {
     };
   }
 
-  private static toEntity(user: User): UserEntity {
+  /**
+   * Maps the aggregate to its row. Public so the admin transaction inserts users with the same
+   * mapping as {@link UserRepository.save}.
+   *
+   * @param user The aggregate.
+   */
+  static toEntity(user: User): UserEntity {
     const entity = new UserEntity();
     entity.id = user.id;
     entity.customerId = user.customerId;

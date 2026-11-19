@@ -45,10 +45,24 @@ Controller → Service → Domain → Repository (Constitution Principle I).
 1. Domain: `Email`, `UserName`, `PasswordPolicy` (checked before hashing), then
    `User.registerCustomer`, which records `UserRegistered`.
 2. `PasswordHasher.hash` (argon2id), then `UserRepository.save` — the PostgreSQL commit comes first.
-3. `UserEventPublisher.publishUserRegistered` for each pulled domain event. On failure: log topic,
-   key, `eventId`, `aggregateId` and cause (never the password or hash), then
-   `OutboundDeadLetterRepository.recordFailure` (`PENDING_RETRY`, same `eventId`). The client
-   gets `201` either way.
+3. `UserEventDispatcher.dispatch(user)`: `UserEventPublisher.publishUserRegistered` for each pulled
+   domain event. On failure: log topic, key, `eventId`, `aggregateId` and cause (never the password
+   or hash), then `OutboundDeadLetterRepository.recordFailure` (`PENDING_RETRY`, same `eventId`).
+   The client gets `201` either way. The dispatcher is shared with admin creation.
+
+**Admin user creation flow** (US-09, `POST /users`, `@Roles(ADMIN)`, `CreateUserService`):
+
+1. Domain: `Email`, `UserName`, `PasswordPolicy`, `User.assertRolesForAdminCreation` (exactly
+   `[CUSTOMER]` or `[ADMIN]`), all before hashing; then `PasswordHasher.hash` and
+   `User.createByAdmin` (a customer records `UserRegistered`, an admin nothing).
+2. `UserRepository.inAdminTransaction`: `lockAdminChanges` → `findById(actor)` (missing or not an
+   `ACTIVE` admin → generic `401`) → `insertUser` (`DuplicateEmailError` → `409`) →
+   `appendAudit(AuditRecord.userCreated(...))` → commit. User and audit row commit together.
+3. Log `user created: actorId targetId roles`, then `UserEventDispatcher.dispatch(user)`.
+
+**Audit trail** (`domain/audit/`): `AuditAction`, immutable `AuditRecord` (`before`/`after` built
+from roles only, never secrets). Stored in `audit_records`, append-only: a trigger rejects every
+`UPDATE` and `DELETE` (ADR 0009). Read endpoint: US-11.
 
 **Outbound retry flow** (US-08, no endpoint):
 
@@ -169,12 +183,12 @@ Controller → Service → Domain → Repository (Constitution Principle I).
 - Domain: `User.assertCanBeDisabledBy` (self rule), `disable`, `enable` (return whether the status
   changed; a no-op writes and logs nothing) and `isActiveAdmin`; `domain/last-active-admin-policy.ts`
   (`LastActiveAdminPolicy.assertCanDisable`).
-- `repositories/user.repository.ts` — `inStatusTransaction(work)` hands the work a `UserStatusTx`
-  (`lockStatusChanges`, `findById`, `findByIdForUpdate`, `countActiveAdmins`, `saveStatus` writing
+- `repositories/user.repository.ts` — `inAdminTransaction(work)` hands the work an `AdminTx`
+  (`lockAdminChanges`, `findById`, `findByIdForUpdate`, `countActiveAdmins`, `saveStatus` writing
   only `status` / `updatedAt`, `revokeAllRefreshTokens`). `queries/user-summary.read-model.ts` gains
   `toUserSummary(user)`, so the response matches `GET /users/{id}`.
 - **Status change flow** (one transaction, in this lock order):
-  `pg_advisory_xact_lock(USER_STATUS_LOCK_KEY)` → acting admin re-read (`ACTIVE` admin or `401`) →
+  `pg_advisory_xact_lock(ADMIN_CHANGES_LOCK_KEY)` → acting admin re-read (`ACTIVE` admin or `401`) →
   target `SELECT … FOR UPDATE` (`404`) → `assertCanBeDisabledBy` → for an `ACTIVE` admin target,
   `countActiveAdmins` + `LastActiveAdminPolicy` → `disable` / `enable` → `saveStatus` → (disable)
   `revokeAllRefreshTokens`. The log line `user status changed: actorId targetId from to

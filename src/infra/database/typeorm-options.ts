@@ -1,6 +1,7 @@
 import { TypeOrmModuleOptions } from '@nestjs/typeorm';
 import { PostgresConnectionOptions } from 'typeorm/driver/postgres/PostgresConnectionOptions';
 import { DatabaseConfig } from '../../config/configuration';
+import { AuditRecordEntity } from './entities/audit-record.entity';
 import { OutboundDeadLetterEntity } from './entities/outbound-dead-letter.entity';
 import { RefreshTokenEntity } from './entities/refresh-token.entity';
 import { UserEntity } from './entities/user.entity';
@@ -15,7 +16,12 @@ export const MIGRATIONS_GLOB = `${__dirname}/migrations/*{.ts,.js}`;
 export const ENTITIES_GLOB = `${__dirname}/entities/*.entity{.ts,.js}`;
 
 /** Every TypeORM entity of the service. */
-export const ENTITIES = [UserEntity, OutboundDeadLetterEntity, RefreshTokenEntity];
+export const ENTITIES = [
+  UserEntity,
+  OutboundDeadLetterEntity,
+  RefreshTokenEntity,
+  AuditRecordEntity,
+];
 
 /**
  * Connection options shared by the application and the migration CLI. The schema is owned by the

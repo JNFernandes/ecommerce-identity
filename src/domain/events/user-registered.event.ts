@@ -15,7 +15,8 @@ export interface UserRegisteredData {
 }
 
 /**
- * Domain event raised when a customer registers. Published on Kafka topic
+ * Domain event raised when a customer is created: by registration (`POST /auth/register`) or by an
+ * admin (`POST /users` with `["CUSTOMER"]`); never for an admin. Published on Kafka topic
  * `identity.user-registered` after the user row is committed, keyed by `aggregateId`; a failed
  * publish is dead-lettered and retried with the same `eventId` (at-least-once delivery).
  *

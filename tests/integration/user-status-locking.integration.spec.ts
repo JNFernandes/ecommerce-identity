@@ -20,7 +20,7 @@ import {
   RefreshTokenRepository,
   RefreshTokenTx,
 } from '../../src/repositories/refresh-token.repository';
-import { UserRepository, UserStatusTx } from '../../src/repositories/user.repository';
+import { UserRepository, AdminTx } from '../../src/repositories/user.repository';
 import { ChangeUserStatusService } from '../../src/services/change-user-status.service';
 import { RefreshService } from '../../src/services/refresh.service';
 import { TokenIssuer } from '../../src/services/ports/token-issuer';
@@ -76,9 +76,9 @@ class SlowUserRepository extends UserRepository {
     super(dataSource.getRepository(UserEntity));
   }
 
-  override inStatusTransaction<T>(work: (tx: UserStatusTx) => Promise<T>): Promise<T> {
-    return super.inStatusTransaction((tx) => {
-      const slow: UserStatusTx = Object.create(tx) as UserStatusTx;
+  override inAdminTransaction<T>(work: (tx: AdminTx) => Promise<T>): Promise<T> {
+    return super.inAdminTransaction((tx) => {
+      const slow: AdminTx = Object.create(tx) as AdminTx;
       slow.findByIdForUpdate = async (id: string): Promise<User | null> => {
         const user = await tx.findByIdForUpdate(id);
         this.timeline.mark('disable holds target row lock');

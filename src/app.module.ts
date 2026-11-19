@@ -11,6 +11,7 @@ import configuration, {
   parseNonNegativeInteger,
   RateLimitConfig,
 } from './config/configuration';
+import { AuditRecordEntity } from './infra/database/entities/audit-record.entity';
 import { OutboundDeadLetterEntity } from './infra/database/entities/outbound-dead-letter.entity';
 import { RefreshTokenEntity } from './infra/database/entities/refresh-token.entity';
 import { UserEntity } from './infra/database/entities/user.entity';
@@ -52,7 +53,9 @@ import { UserEventsProducer } from './infra/kafka/user-events.producer';
 import { DEFAULT_JWKS_CACHE_SECONDS, JwksService } from './services/jwks.service';
 import { AdminSeedService } from './services/admin-seed.service';
 import { ChangeUserStatusService } from './services/change-user-status.service';
+import { CreateUserService } from './services/create-user.service';
 import { RetryOutboundEventsService } from './services/retry-outbound-events.service';
+import { UserEventDispatcher } from './services/user-event-dispatcher';
 import { DeadLetterRetryWorker } from './infra/outbound/dead-letter-retry.worker';
 import { GetUserService } from './services/get-user.service';
 import { ListUsersService } from './services/list-users.service';
@@ -121,7 +124,12 @@ function createJwksService(publicKeySet: PublicKeySet, configService: ConfigServ
       useFactory: (configService: ConfigService) =>
         buildTypeOrmOptions(configService.getOrThrow<DatabaseConfig>('database')),
     }),
-    TypeOrmModule.forFeature([UserEntity, OutboundDeadLetterEntity, RefreshTokenEntity]),
+    TypeOrmModule.forFeature([
+      UserEntity,
+      OutboundDeadLetterEntity,
+      RefreshTokenEntity,
+      AuditRecordEntity,
+    ]),
     ThrottlerModule.forRootAsync({
       inject: [ConfigService],
       useFactory: (configService: ConfigService) => {
@@ -199,6 +207,7 @@ function createJwksService(publicKeySet: PublicKeySet, configService: ConfigServ
     { provide: APP_FILTER, useClass: AccessTokenExceptionFilter },
     RoutePolicyCheck,
     { provide: UserEventPublisher, useClass: UserEventsProducer },
+    UserEventDispatcher,
     RegisterCustomerService,
     LoginService,
     RefreshService,
@@ -208,6 +217,7 @@ function createJwksService(publicKeySet: PublicKeySet, configService: ConfigServ
     ListUsersService,
     GetUserService,
     ChangeUserStatusService,
+    CreateUserService,
     RetryOutboundEventsService,
     DeadLetterRetryWorker,
   ],

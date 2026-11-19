@@ -12,7 +12,8 @@ are in `ecommerce-infra/docs/events.md`, which is the source of truth.
 > endpoint with key rotation, refresh and logout, `GET /users/me` with default-deny role guards, the
 > startup admin seed, the admin `GET /users` and `GET /users/{id}`, and enabling or disabling users
 > with `PATCH /users/{id}/status`, the outbound retry worker (US-08) and admin user creation with
-> `POST /users` (US-09). Everything marked **planned** below is set by the constitution but
+> `POST /users` (US-09), role changes with `PUT /users/{id}/roles` (US-10) and the audit trail
+> `GET /audit` (US-11). Everything marked **planned** below is set by the constitution but
 > not built yet.
 
 > **HTTPS is required outside local development.** This service receives passwords and issues
@@ -28,7 +29,7 @@ are in `ecommerce-infra/docs/events.md`, which is the source of truth.
 Users are created with one role and may later hold both. Roles change only through
 `PUT /users/{id}/roles`, called by an `ADMIN`; never self-service. A user cannot remove their own `ADMIN` role, and the last `ACTIVE` admin can never
 lose `ADMIN` or be disabled. Every user creation by an admin, role change and status change is
-recorded in an append-only audit trail readable by admins through `GET /audit` (planned)
+recorded in an append-only audit trail readable by admins through [`GET /audit`](#get-audit)
 ([ADR 0008](docs/adr/0008-admin-creation-and-role-changes-through-the-api.md), which supersedes
 [ADR 0003](docs/adr/0003-admin-seed-and-no-role-change.md)).
 
@@ -54,7 +55,7 @@ recorded in an append-only audit trail readable by admins through `GET /audit` (
 | `POST /users/me/password` | `CUSTOMER`, `ADMIN` | planned |
 | `POST /users` | `ADMIN` | implemented |
 | `PUT /users/{id}/roles` | `ADMIN` | implemented |
-| `GET /audit` | `ADMIN` | planned |
+| `GET /audit` | `ADMIN` | implemented |
 
 `GET /users/me` returns the caller's account as stored now:
 `{ "id", "customerId", "email", "name", "roles", "status", "createdAt" }`. `customerId` is left out
@@ -167,6 +168,27 @@ Admins only. Creates an `ACTIVE` user with **exactly one** role:
   `user created: actorId=… targetId=… roles=…` follows. Nothing secret is logged or audited.
 - **Trade-off:** the admin chooses the initial password and therefore knows it. The user should
   change it with `POST /users/me/password` (planned) right after the first login.
+
+### `GET /audit`
+
+Admins only. One page of the audit trail, newest first (`createdAt` desc, then `id` desc):
+`{ "items", "total", "limit", "offset" }`; each item is exactly
+`{ "id", "actorId", "action", "targetId", "before", "after", "createdAt" }`.
+
+- Audited actions: `USER_CREATED` (`POST /users`, `after` = roles), `ROLES_CHANGED`
+  (`PUT /users/{id}/roles`, roles before/after) and `USER_STATUS_CHANGED`
+  (`PATCH /users/{id}/status`, status before/after). Each is written in the same transaction as
+  the change; no-ops and failed changes write nothing; the startup seed writes nothing.
+- Records never hold passwords, hashes, tokens or emails.
+- Query: `limit` 1–100 (default 20), `offset` ≥ 0 (default 0), optional `actorId`, `targetId`
+  (UUIDs) and `action`, combined with AND. `total` counts every match; an offset past the end
+  returns no items with the real total.
+- `400` for an invalid, repeated or unknown parameter; `401` without a token or when the caller is
+  no longer an `ACTIVE` admin; `403` for a customer. Reads are neither audited nor logged.
+- **Append-only:** the `audit_records_append_only` trigger rejects every `UPDATE` and `DELETE`
+  whatever database role the app connects as
+  ([ADR 0009](docs/adr/0009-append-only-audit-table.md)). Indexes on `occurredAt`, `actorId` and
+  `targetId` back the ordering and filters.
 
 ### `POST /auth/register`
 

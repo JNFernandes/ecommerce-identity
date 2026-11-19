@@ -54,7 +54,7 @@ None (no new dependency or config).
 
 ## Phase 8: Polish
 
-- [ ] T012 Docs: `README.md` (`GET /audit` row without "planned", audited actions `USER_CREATED`/`ROLES_CHANGED`/`USER_STATUS_CHANGED`, append-only trigger note), `src/README.md` (audit read path: controller → `ListAuditRecordsService` → `AuditRecordRepository.findPage`), `.specify/memory/constitution.md` XI migration note on US-07 → resolved (PATCH version bump + sync report). Commit `docs(US-11): document GET /audit and resolve constitution XI note`.
+- [X] T012 Docs: `README.md` (`GET /audit` row without "planned", audited actions `USER_CREATED`/`ROLES_CHANGED`/`USER_STATUS_CHANGED`, append-only trigger note), `src/README.md` (audit read path: controller → `ListAuditRecordsService` → `AuditRecordRepository.findPage`), `.specify/memory/constitution.md` XI migration note on US-07 → resolved (PATCH version bump + sync report). Commit `docs(US-11): document GET /audit and resolve constitution XI note`.
 
 ## Dependencies
 

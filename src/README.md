@@ -62,7 +62,10 @@ Controller → Service → Domain → Repository (Constitution Principle I).
 
 **Audit trail** (`domain/audit/`): `AuditAction`, immutable `AuditRecord` (`before`/`after` built
 from roles only, never secrets). Stored in `audit_records`, append-only: a trigger rejects every
-`UPDATE` and `DELETE` (ADR 0009). Read endpoint: US-11.
+`UPDATE` and `DELETE` (ADR 0009). Read path (US-11): `AuditController` (`GET /audit`,
+`ListAuditRecordsQueryDto`) → `ListAuditRecordsService` (re-reads the caller; missing or not an
+`ACTIVE` admin → generic `401`) → `AuditRecordRepository.findPage` (read-only; `occurredAt` desc,
+`id` desc; `createdAt` ← `occurredAt`). Nothing is logged or audited on read.
 
 **Outbound retry flow** (US-08, no endpoint):
 

@@ -48,6 +48,14 @@ warning (`--max-warnings 0`), or a formatting violation. Never mark a task compl
   one or two lines.
 - Final summaries: at most 10 lines.
 - Commit after every task (Conventional Commits, after a green gate).
+- One story per session: `/clear` before `/speckit-specify`; never carry a finished story's context.
+- Put clarification answers in the `/speckit-specify` prompt; skip `/speckit-clarify` and
+  `/speckit-analyze` unless asked.
+- Small stories: only spec.md, a short plan.md and tasks.md (no research, data-model, contracts,
+  quickstart). Fixes: no spec, just a `fix/` branch.
+- Aim for 5–7 tasks per story (domain, persistence, service, endpoint, component tests, docs), each
+  still gated and committed.
+- Don't run the manual quickstart unless asked; component tests cover it.
 
 ## Layering
 

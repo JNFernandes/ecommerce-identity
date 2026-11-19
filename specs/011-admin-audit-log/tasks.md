@@ -32,7 +32,7 @@ None (no new dependency or config).
 
 **Independent test**: two admins act on two users with different actions; each filter alone and combined.
 
-- [ ] T008 [P] [US2] Component test `tests/component/audit-list-filters.component.spec.ts`: `actorId`, `targetId`, `action` alone and combined (AND), `total` counts only matches, well-formed unknown id → 200 empty. Commit `test(US-11): add component tests for audit filters`.
+- [X] T008 [P] [US2] Component test `tests/component/audit-list-filters.component.spec.ts`: `actorId`, `targetId`, `action` alone and combined (AND), `total` counts only matches, well-formed unknown id → 200 empty. Commit `test(US-11): add component tests for audit filters`.
 
 ## Phase 5: User Story 3 - Status changes are audited (P1)
 

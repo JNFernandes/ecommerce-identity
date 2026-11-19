@@ -54,7 +54,7 @@ access token still works.
   throttled route (auth.controller skip helper line ~67, jwks.controller) and skip the other
   throttlers on this route. Global `JwtAuthGuard` runs before `ThrottlerGuard`, so `req.user` is set.
   Extend `tests/unit/config` for the new env vars.
-- [ ] T005 [US1] Component test `tests/component/change-password.component.spec.ts`: US1 scenarios
+- [X] T005 [US1] Component test `tests/component/change-password.component.spec.ts`: US1 scenarios
   1–4 (200 login shape, new/old login, returned refresh rotates, admin roles unchanged) and US2
   scenarios 1–3 (two sessions' old refresh tokens refused, returned one accepted, old access token
   still valid); broker unreachable has no effect (FR-010); captured logs contain no password, hash or

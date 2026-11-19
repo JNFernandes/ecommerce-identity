@@ -60,6 +60,7 @@ import { RetryOutboundEventsService } from './services/retry-outbound-events.ser
 import { UserEventDispatcher } from './services/user-event-dispatcher';
 import { DeadLetterRetryWorker } from './infra/outbound/dead-letter-retry.worker';
 import { GetUserService } from './services/get-user.service';
+import { ListAuditRecordsService } from './services/list-audit-records.service';
 import { ListUsersService } from './services/list-users.service';
 import { GetCurrentUserService } from './services/get-current-user.service';
 import { LoginService } from './services/login.service';
@@ -218,6 +219,7 @@ function createJwksService(publicKeySet: PublicKeySet, configService: ConfigServ
     GetCurrentUserService,
     AdminSeedService,
     ListUsersService,
+    ListAuditRecordsService,
     GetUserService,
     ChangeUserStatusService,
     ChangeUserRolesService,

@@ -64,6 +64,13 @@ export interface AdminTx {
   saveStatus(user: User): Promise<void>;
 
   /**
+   * Writes the user's `roles`, `customerId` and `updatedAt`; no other column is touched.
+   *
+   * @param user The user, after `changeRoles`.
+   */
+  saveRoles(user: User): Promise<void>;
+
+  /**
    * Revokes every not-yet-revoked refresh token of a user, in every family. Already revoked rows
    * keep their `revokedAt` and `replacedBy`.
    *
@@ -125,6 +132,14 @@ class EntityManagerAdminTx implements AdminTx {
       UserEntity,
       { id: user.id },
       { status: user.status, updatedAt: user.updatedAt },
+    );
+  }
+
+  async saveRoles(user: User): Promise<void> {
+    await this.manager.update(
+      UserEntity,
+      { id: user.id },
+      { roles: user.roles, customerId: user.customerId, updatedAt: user.updatedAt },
     );
   }
 

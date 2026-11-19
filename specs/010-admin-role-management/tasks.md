@@ -13,7 +13,7 @@ tests → docs) rather than one phase per story; labels show which stories each 
 
 ## Phase 2: Persistence
 
-- [ ] T002 [US1] [US3] [US5] Add `AdminTx.saveRoles(user)` (roles + `customerId`) in `src/repositories/user.repository.ts`; add a migration in `src/migrations/` only if the audit `action` column is a DB enum/check; integration test in `test/integration/`.
+- [X] T002 [US1] [US3] [US5] Add `AdminTx.saveRoles(user)` (roles + `customerId`) in `src/repositories/user.repository.ts`; add a migration in `src/migrations/` only if the audit `action` column is a DB enum/check; integration test in `test/integration/`.
 
 ## Phase 3: Service, token and endpoint
 

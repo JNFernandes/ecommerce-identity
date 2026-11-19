@@ -77,6 +77,12 @@ class FakeTx implements AdminTx {
     return Promise.resolve();
   }
 
+  saveRoles(user: User): Promise<void> {
+    this.calls.push('saveRoles');
+    this.saved.push(user);
+    return Promise.resolve();
+  }
+
   revokeAllRefreshTokens(userId: string, at: Date): Promise<number> {
     this.calls.push(`revokeAllRefreshTokens:${userId}:${at.toISOString()}`);
     return Promise.resolve(this.revokedCount);
@@ -98,6 +104,7 @@ class FakeTx implements AdminTx {
     return this.calls.some(
       (call) =>
         call === 'saveStatus' ||
+        call === 'saveRoles' ||
         call.startsWith('revokeAllRefreshTokens') ||
         call.startsWith('insertUser') ||
         call.startsWith('appendAudit'),

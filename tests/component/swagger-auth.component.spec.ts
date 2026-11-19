@@ -17,6 +17,8 @@ interface Operation {
   responses: Record<string, unknown>;
   parameters?: Parameter[];
   'x-roles'?: string[];
+  'x-public'?: boolean;
+  description?: string;
 }
 
 interface Schema {
@@ -166,5 +168,28 @@ describe('Swagger authentication docs (component)', () => {
 
     expect(operation.security).toBeUndefined();
     expect(operation['x-roles']).toBeUndefined();
+  });
+
+  it('should state the access of every operation and document at least one non-2xx response', () => {
+    const operations = Object.entries(doc.paths).flatMap(([path, item]) =>
+      Object.entries(item).map(([method, operation]) => ({
+        route: `${method} ${path}`,
+        operation,
+      })),
+    );
+
+    expect(operations.length).toBeGreaterThan(0);
+    for (const { route, operation } of operations) {
+      const roles = operation['x-roles'];
+      if (roles === undefined) {
+        expect({ route, public: operation['x-public'] }).toEqual({ route, public: true });
+        expect(operation.description).toMatch(/^\*\*Access:\*\* public/);
+      } else {
+        expect({ route, public: operation['x-public'] }).toEqual({ route, public: undefined });
+        expect(operation.description?.startsWith(`**Roles:** ${roles.join(', ')} `)).toBe(true);
+      }
+      const errors = Object.keys(operation.responses).filter((status) => !status.startsWith('2'));
+      expect({ route, hasErrors: errors.length > 0 }).toEqual({ route, hasErrors: true });
+    }
   });
 });

@@ -38,13 +38,13 @@ None (no new dependency or config).
 
 **Independent test**: disable then enable a user; repeat a no-op; read `GET /audit?targetId=…`.
 
-- [ ] T009 [P] [US3] Component test `tests/component/audit-status-change.component.spec.ts`: disable → one `USER_STATUS_CHANGED` record (`before {status: ACTIVE}`, `after {status: DISABLED}`, actor, target); enable → second record; no-op → no new record (rollback on audit failure stays covered by `status-change-audit.integration.spec.ts`). Commit `test(US-11): verify status changes in the audit trail`.
+- [X] T009 [P] [US3] Component test `tests/component/audit-status-change.component.spec.ts`: disable → one `USER_STATUS_CHANGED` record (`before {status: ACTIVE}`, `after {status: DISABLED}`, actor, target); enable → second record; no-op → no new record (rollback on audit failure stays covered by `status-change-audit.integration.spec.ts`). Commit `test(US-11): verify status changes in the audit trail`.
 
 ## Phase 6: User Story 4 - Records cannot be altered (P2)
 
 **Independent test**: UPDATE/DELETE as the app's DB user fail; INSERT still works.
 
-- [ ] T010 [US4] Verify only: confirm `audit-records-migration.integration.spec.ts` covers UPDATE/DELETE rejection and INSERT success (add the missing assertion if any) and that `AuditRecordRepository` exposes no write methods. No commit if nothing changed.
+- [X] T010 [US4] Verify only: confirm `audit-records-migration.integration.spec.ts` covers UPDATE/DELETE rejection and INSERT success (add the missing assertion if any) and that `AuditRecordRepository` exposes no write methods. No commit if nothing changed.
 
 ## Phase 7: User Story 5 - Access and validation (P2)
 

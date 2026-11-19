@@ -50,6 +50,19 @@ Controller → Service → Domain → Repository (Constitution Principle I).
    `OutboundDeadLetterRepository.recordFailure` (`PENDING_RETRY`, same `eventId`). The client
    gets `201` either way.
 
+**Outbound retry flow** (US-08, no endpoint):
+
+1. `infra/outbound/DeadLetterRetryWorker` — self-rescheduling, `unref()`'d timer; first run one
+   interval after bootstrap (never awaited), next run only after the previous one ends; failures
+   logged, never thrown. `onModuleDestroy` stops it before the producer and the pool close.
+2. `RetryOutboundEventsService.runBatch` — up to `batchSize` times:
+   `OutboundDeadLetterRepository.processNextDue` (one transaction, `FOR UPDATE SKIP LOCKED`) →
+   `UserEventPublisher.republish(topic, key, payload)` → domain `decideRetry` → write → commit.
+   Logs one summary per non-empty run, one `warn` per rescheduled failure, one `error` per
+   exhaustion; never the payload.
+3. `domain/outbound/retry-policy.ts` — pure backoff (`nextRetryDelay`) and transitions
+   (`decideRetry`: `RESOLVED` / `PENDING_RETRY` / `EXHAUSTED`).
+
 **Folders added by US-01:**
 
 - `services/ports/` — abstract classes the services depend on, used as Nest injection tokens:

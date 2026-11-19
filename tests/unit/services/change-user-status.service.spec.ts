@@ -1,3 +1,4 @@
+import { AuditRecord } from '../../../src/domain/audit/audit-record';
 import { Logger } from '@nestjs/common';
 import { ChangeUserStatusCommand } from '../../../src/commands/change-user-status.command';
 import { Email } from '../../../src/domain/email.value-object';
@@ -79,10 +80,24 @@ class FakeTx implements AdminTx {
     return Promise.resolve(this.revokedCount);
   }
 
+  insertUser(user: User): Promise<void> {
+    this.calls.push(`insertUser:${user.id}`);
+    return Promise.resolve();
+  }
+
+  appendAudit(record: AuditRecord): Promise<void> {
+    this.calls.push(`appendAudit:${record.action}`);
+    return Promise.resolve();
+  }
+
   /** Whether any write happened. */
   wrote(): boolean {
     return this.calls.some(
-      (call) => call === 'saveStatus' || call.startsWith('revokeAllRefreshTokens'),
+      (call) =>
+        call === 'saveStatus' ||
+        call.startsWith('revokeAllRefreshTokens') ||
+        call.startsWith('insertUser') ||
+        call.startsWith('appendAudit'),
     );
   }
 }

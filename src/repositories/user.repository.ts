@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { EntityManager, IsNull, Repository } from 'typeorm';
+import { AuditRecord } from '../domain/audit/audit-record';
 import { Email } from '../domain/email.value-object';
 import { DuplicateEmailError } from '../domain/errors/duplicate-email.error';
 import { Role } from '../domain/role.enum';
@@ -70,6 +71,21 @@ export interface AdminTx {
    * @returns The number of tokens revoked.
    */
   revokeAllRefreshTokens(userId: string, at: Date): Promise<number>;
+
+  /**
+   * Inserts a new user. A unique violation (email taken, case-insensitive) aborts the transaction.
+   *
+   * @param user The new user.
+   * @throws DuplicateEmailError When another user already has the email.
+   */
+  insertUser(user: User): Promise<void>;
+
+  /**
+   * Appends one audit record (insert only; the table rejects updates and deletes).
+   *
+   * @param record The record of the change made in this transaction.
+   */
+  appendAudit(record: AuditRecord): Promise<void>;
 }
 
 /** {@link AdminTx} bound to one TypeORM transaction manager. */
@@ -118,6 +134,34 @@ class EntityManagerAdminTx implements AdminTx {
       { revokedAt: at },
     );
     return result.affected ?? 0;
+  }
+
+  async insertUser(user: User): Promise<void> {
+    try {
+      await this.manager.insert(UserEntity, UserRepository.toEntity(user));
+    } catch (error) {
+      if (isUniqueViolation(error)) {
+        throw new DuplicateEmailError();
+      }
+      throw error;
+    }
+  }
+
+  async appendAudit(record: AuditRecord): Promise<void> {
+    // A plain INSERT: the table is append-only, so nothing here may ever update a row.
+    await this.manager.query(
+      `INSERT INTO "audit_records" ("id", "actorId", "action", "targetId", "before", "after", "occurredAt")
+       VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7)`,
+      [
+        record.id,
+        record.actorId,
+        record.action,
+        record.targetId,
+        record.before === null ? null : JSON.stringify(record.before),
+        JSON.stringify(record.after),
+        record.occurredAt,
+      ],
+    );
   }
 }
 
@@ -264,7 +308,13 @@ export class UserRepository {
     };
   }
 
-  private static toEntity(user: User): UserEntity {
+  /**
+   * Maps the aggregate to its row. Public so the admin transaction inserts users with the same
+   * mapping as {@link UserRepository.save}.
+   *
+   * @param user The aggregate.
+   */
+  static toEntity(user: User): UserEntity {
     const entity = new UserEntity();
     entity.id = user.id;
     entity.customerId = user.customerId;

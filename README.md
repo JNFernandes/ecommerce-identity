@@ -8,10 +8,11 @@ The rules for this repository are in the constitution,
 [`.specify/memory/constitution.md`](.specify/memory/constitution.md). The shared event contracts
 are in `ecommerce-infra/docs/events.md`, which is the source of truth.
 
-> **Status: in progress.** US-01 to US-06 are implemented: customer registration, login, the JWKS
+> **Status: in progress.** US-01 to US-07 are implemented: customer registration, login, the JWKS
 > endpoint with key rotation, refresh and logout, `GET /users/me` with default-deny role guards, the
-> startup admin seed, and the admin `GET /users` and `GET /users/{id}`. Everything marked **planned**
-> below is set by the constitution but not built yet.
+> startup admin seed, the admin `GET /users` and `GET /users/{id}`, and enabling or disabling users
+> with `PATCH /users/{id}/status`. Everything marked **planned** below is set by the constitution but
+> not built yet.
 
 > **HTTPS is required outside local development.** This service receives passwords and issues
 > tokens; never expose it over plain HTTP except on `localhost`.
@@ -39,7 +40,7 @@ No endpoint can change a user's role ([ADR 0003](docs/adr/0003-admin-seed-and-no
 | `GET /users/me` | `CUSTOMER`, `ADMIN` | implemented |
 | `GET /users` | `ADMIN` | implemented |
 | `GET /users/{id}` | `ADMIN` | implemented |
-| `PATCH /users/{id}/status` | `ADMIN` | planned |
+| `PATCH /users/{id}/status` | `ADMIN` | implemented |
 
 `GET /users/me` returns the caller's account as stored now:
 `{ "id", "customerId", "email", "name", "roles", "status", "createdAt" }`. `customerId` is left out
@@ -65,6 +66,28 @@ items with the real total. An invalid or unknown parameter gets `400` with the v
 `GET /users/{id}` returns one user in the same shape: `404` (`user not found`) when no user has
 this id, `400` when the id is not a UUID. `GET /users/me` keeps its own handler. Both endpoints read
 PostgreSQL only and work with Kafka down.
+
+### `PATCH /users/{id}/status`
+
+Admins only. Body `{ "status": "ACTIVE" | "DISABLED" }` (exact case, no other field). Answers `200`
+with the user after the request, in the `GET /users/{id}` shape.
+
+- `DISABLED` sets the status and revokes **every** refresh token of the user (all sessions) in one
+  transaction. Login, refresh and `GET /users/me` then refuse the user with their usual generic
+  `401`.
+- `ACTIVE` restores login. Tokens revoked by the disable stay revoked: the user logs in again.
+- Setting the status a user already has is a no-op: `200`, nothing written, nothing logged.
+- Safeguards: an admin cannot disable their own account (`409`
+  `an admin cannot disable their own account`), and the last `ACTIVE` admin cannot be disabled
+  (`409` `the last active admin cannot be disabled`). The acting admin is re-read in the same
+  transaction: an admin disabled since their token was issued gets the generic `401`. Status
+  changes are serialized, so two admins disabling each other at once leave exactly one `ACTIVE`
+  admin (the other request gets `401`).
+- `400` for a malformed id, a missing, unknown or wrongly cased status, an extra field or malformed
+  JSON; `404` (`user not found`) for an unknown id; `401` / `403` as for every protected route.
+- Every effective change logs
+  `user status changed: actorId=… targetId=… from=… to=… revokedTokens=N` (ids only). No role is
+  ever changed, no event is published, and the endpoint works with Kafka down.
 
 `GET /health` returns `200` with `{ "status": "ok", "database": "up", "kafka": "idle" }` when
 PostgreSQL answers, and `503` when it does not. The `kafka` field (`idle`, `connected`,
@@ -146,6 +169,11 @@ down (never `204`).
 - **Access tokens outlive logout.** Access tokens are stateless JWTs: one issued before a logout
   (or a reuse revocation, or disabling the user) stays valid until its `exp`, at most
   `JWT_ACCESS_TTL_SECONDS` (15 minutes by default).
+- **Disabling a user is immediate where the database is read, not everywhere.** A disabled user's
+  access tokens stay valid on token-only routes (and in downstream services) until `exp`, at most
+  `JWT_ACCESS_TTL_SECONDS`. `GET /users/me`, login, refresh and `PATCH /users/{id}/status` read the
+  current status and refuse the user at once; every refresh token is already revoked
+  ([ADR 0006](docs/adr/0006-status-changes-serialized-and-sessions-revoked.md)).
 - **Reuse detection is strict, with no grace window.** A client that retries a refresh after
   losing the first response presents a used token, so the session is revoked and the user must log
   in again. Clients must not retry a refresh blindly.
@@ -229,7 +257,7 @@ key set (active or retired), signature, `iss`, `aud`, `exp`/`iat`/`nbf` with
 
 | Outcome | Status | Body |
 |---|---|---|
-| Missing, malformed, untrusted or expired token, or the user is no longer active | `401` + `WWW-Authenticate: Bearer` | `{"statusCode":401,"message":"unauthorized","error":"Unauthorized"}`, byte-identical for every cause |
+| Missing, malformed, untrusted or expired token, or the user is no longer active (checked by `GET /users/me` and `PATCH /users/{id}/status`) | `401` + `WWW-Authenticate: Bearer` | `{"statusCode":401,"message":"unauthorized","error":"Unauthorized"}`, byte-identical for every cause |
 | Valid token, but none of the route's roles | `403` | `{"statusCode":403,"message":"forbidden","error":"Forbidden"}` |
 
 The failure reason is logged at `warn`; tokens and `Authorization` values never are. Access tokens

@@ -137,6 +137,56 @@ describe('DeadLetterRetryWorker', () => {
     expect(unref).toHaveBeenCalledTimes(1);
   });
 
+  describe('failed runs', () => {
+    let error: jest.SpyInstance;
+    let unhandled: jest.Mock;
+
+    beforeEach(() => {
+      error = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+      unhandled = jest.fn();
+      process.on('unhandledRejection', unhandled);
+    });
+
+    afterEach(() => {
+      process.off('unhandledRejection', unhandled);
+    });
+
+    it('should log a rejected run once and still run on schedule afterwards', async () => {
+      runBatch.mockRejectedValueOnce(new Error('database unreachable'));
+      build().onApplicationBootstrap();
+
+      jest.advanceTimersByTime(INTERVAL);
+      await flush();
+      jest.advanceTimersByTime(INTERVAL);
+      await flush();
+
+      expect(error).toHaveBeenCalledTimes(1);
+      expect(error).toHaveBeenCalledWith('Outbound retry run failed: database unreachable');
+      expect(runBatch).toHaveBeenCalledTimes(2);
+      expect(unhandled).not.toHaveBeenCalled();
+    });
+
+    it('should catch a synchronous throw from the run the same way', async () => {
+      runBatch.mockImplementationOnce(() => {
+        throw new Error('boom');
+      });
+      const worker = build();
+
+      await expect(worker.runOnce()).resolves.toBeUndefined();
+
+      expect(error).toHaveBeenCalledWith('Outbound retry run failed: boom');
+      expect(unhandled).not.toHaveBeenCalled();
+    });
+
+    it('should log a non-Error rejection as text', async () => {
+      runBatch.mockRejectedValueOnce('plain failure');
+
+      await build().runOnce();
+
+      expect(error).toHaveBeenCalledWith('Outbound retry run failed: plain failure');
+    });
+  });
+
   describe('onModuleDestroy', () => {
     /** Makes the next runBatch hang until the returned functions settle it. */
     function hangNextRun(): { finish: () => void; fail: (error: Error) => void } {

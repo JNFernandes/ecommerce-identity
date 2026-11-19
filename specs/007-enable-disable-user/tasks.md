@@ -112,7 +112,7 @@ No setup tasks: no package, configuration or migration changes (plan "Technical 
 
 **Independent Test**: Disable twice and enable an active user; compare rows, tokens and logs.
 
-- [ ] T021 [US4] Component test `tests/component/users-status-idempotent.component.spec.ts` (with `tests/component/support/capturing-logger.ts`): `DISABLED` twice → both 200, `updatedAt` unchanged by the second, one `user status changed` line in total; `ACTIVE` on an active customer → 200, `updatedAt` unchanged, its refresh token rows unchanged and still usable, no status-change line (US4-AS1–AS2, FR-005). Commit `test(US-07): cover idempotent status requests`.
+- [X] T021 [US4] Component test `tests/component/users-status-idempotent.component.spec.ts` (with `tests/component/support/capturing-logger.ts`): `DISABLED` twice → both 200, `updatedAt` unchanged by the second, one `user status changed` line in total; `ACTIVE` on an active customer → 200, `updatedAt` unchanged, its refresh token rows unchanged and still usable, no status-change line (US4-AS1–AS2, FR-005). Commit `test(US-07): cover idempotent status requests`.
 
 ---
 

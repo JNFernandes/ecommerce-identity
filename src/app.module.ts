@@ -35,6 +35,7 @@ import {
 import { HealthService } from './services/health.service';
 import { OutboundDeadLetterRepository } from './repositories/outbound-dead-letter.repository';
 import { RefreshTokenRepository } from './repositories/refresh-token.repository';
+import { AuditRecordRepository } from './repositories/audit-record.repository';
 import { UserRepository } from './repositories/user.repository';
 import { Argon2PasswordHasher } from './infra/security/argon2-password-hasher';
 import { CryptoRefreshTokenGenerator } from './infra/security/crypto-refresh-token-generator';
@@ -175,6 +176,7 @@ function createJwksService(publicKeySet: PublicKeySet, configService: ConfigServ
     UserRepository,
     OutboundDeadLetterRepository,
     RefreshTokenRepository,
+    AuditRecordRepository,
     { provide: PasswordHasher, useClass: Argon2PasswordHasher },
     {
       provide: KeyRing,

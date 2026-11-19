@@ -193,7 +193,7 @@ from roles only, never secrets). Stored in `audit_records`, append-only: a trigg
   `countActiveAdmins` + `LastActiveAdminPolicy` → `disable` / `enable` → `saveStatus` → (disable)
   `revokeAllRefreshTokens` → `appendAudit(AuditRecord.statusChanged(...))` (`USER_STATUS_CHANGED`,
   only when the status changed). The log line `user status changed: actorId targetId from to
-  revokedTokens` is written after the commit. The advisory lock serializes status changes, so
+revokedTokens` is written after the commit. The advisory lock serializes status changes, so
   crossed disables of two admins cannot deadlock and the admin count is exact.
 - **Refresh lock order** is now `findByHash` → `lockUserForShare` (`SELECT 1 … FOR SHARE` on the
   user row) → `lockFamily` → `findByHashForUpdate`: a disable waits for an in-flight refresh and

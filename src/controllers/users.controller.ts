@@ -1,5 +1,6 @@
 import {
   Body,
+  ConflictException,
   Controller,
   Get,
   HttpCode,
@@ -21,6 +22,8 @@ import {
 } from '@nestjs/swagger';
 import { ChangeUserStatusCommand } from '../commands/change-user-status.command';
 import { AuthenticatedPrincipal } from '../domain/authenticated-principal';
+import { CannotDisableSelfError } from '../domain/errors/cannot-disable-self.error';
+import { LastActiveAdminError } from '../domain/errors/last-active-admin.error';
 import { UserNotFoundError } from '../domain/errors/user-not-found.error';
 import { Role } from '../domain/role.enum';
 import { ChangeUserStatusDto } from '../dto/change-user-status.dto';
@@ -136,6 +139,7 @@ export class UsersController {
    * @param dto The requested status, already validated.
    * @param principal The acting admin.
    * @throws NotFoundException When no user has this id.
+   * @throws ConflictException When the admin disables their own account or the last active admin.
    */
   @Patch(':id/status')
   @Roles(Role.ADMIN)
@@ -173,6 +177,9 @@ export class UsersController {
     } catch (error) {
       if (error instanceof UserNotFoundError) {
         throw new NotFoundException(error.message);
+      }
+      if (error instanceof CannotDisableSelfError || error instanceof LastActiveAdminError) {
+        throw new ConflictException(error.message);
       }
       throw error;
     }

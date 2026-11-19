@@ -1,8 +1,10 @@
-import { NotFoundException } from '@nestjs/common';
+import { ConflictException, NotFoundException } from '@nestjs/common';
 import { CommandBus, QueryBus } from '@nestjs/cqrs';
 import { UsersController } from '../../../src/controllers/users.controller';
 import { ChangeUserStatusCommand } from '../../../src/commands/change-user-status.command';
 import { AuthenticatedPrincipal } from '../../../src/domain/authenticated-principal';
+import { CannotDisableSelfError } from '../../../src/domain/errors/cannot-disable-self.error';
+import { LastActiveAdminError } from '../../../src/domain/errors/last-active-admin.error';
 import { UserNotFoundError } from '../../../src/domain/errors/user-not-found.error';
 import { Role } from '../../../src/domain/role.enum';
 import { UserStatus } from '../../../src/domain/user-status.enum';
@@ -187,6 +189,24 @@ describe('UsersController', () => {
         statusCode: 404,
         message: 'user not found',
         error: 'Not Found',
+      });
+    });
+
+    it.each([
+      [new CannotDisableSelfError(), 'an admin cannot disable their own account'],
+      [new LastActiveAdminError(), 'the last active admin cannot be disabled'],
+    ])('should map %p to a 409 with the contract message', async (failure, message) => {
+      const execute = jest.fn().mockRejectedValue(failure);
+
+      const error: unknown = await controllerWith(execute)
+        .changeStatus(USER_ID, dto(UserStatus.DISABLED), admin)
+        .catch((caught: unknown) => caught);
+
+      expect(error).toBeInstanceOf(ConflictException);
+      expect((error as ConflictException).getResponse()).toEqual({
+        statusCode: 409,
+        message,
+        error: 'Conflict',
       });
     });
 

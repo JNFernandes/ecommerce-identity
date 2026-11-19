@@ -112,6 +112,12 @@ export interface RateLimitConfig {
    * `RATE_LIMIT_LOGOUT_TTL_MS`, default 60000).
    */
   logout: RateLimitRule;
+  /**
+   * `POST /users/me/password`, per user id and client IP
+   * (`RATE_LIMIT_PASSWORD_CHANGE_LIMIT`, default 5; `RATE_LIMIT_PASSWORD_CHANGE_TTL_MS`, default
+   * 60000).
+   */
+  passwordChange: RateLimitRule;
 }
 
 /** Cross-origin settings. */
@@ -397,6 +403,10 @@ export default (): AppConfig => ({
     logout: {
       limit: parseInteger(process.env.RATE_LIMIT_LOGOUT_LIMIT, 30),
       ttlMs: parseInteger(process.env.RATE_LIMIT_LOGOUT_TTL_MS, 60000),
+    },
+    passwordChange: {
+      limit: parseInteger(process.env.RATE_LIMIT_PASSWORD_CHANGE_LIMIT, 5),
+      ttlMs: parseInteger(process.env.RATE_LIMIT_PASSWORD_CHANGE_TTL_MS, 60000),
     },
   },
   admin: readAdminSeedConfig(),

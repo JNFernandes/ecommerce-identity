@@ -34,6 +34,8 @@ const VARIABLES = [
   'RATE_LIMIT_REFRESH_TTL_MS',
   'RATE_LIMIT_LOGOUT_LIMIT',
   'RATE_LIMIT_LOGOUT_TTL_MS',
+  'RATE_LIMIT_PASSWORD_CHANGE_LIMIT',
+  'RATE_LIMIT_PASSWORD_CHANGE_TTL_MS',
   'ADMIN_EMAIL',
   'ADMIN_PASSWORD',
   'ADMIN_NAME',
@@ -183,6 +185,17 @@ describe('configuration', () => {
 
     expect(rateLimit.refresh).toEqual({ limit: 7, ttlMs: 1000 });
     expect(rateLimit.logout).toEqual({ limit: 4, ttlMs: 2000 });
+  });
+
+  it('should default the password change rate limit to 5 requests per minute', () => {
+    expect(configuration().rateLimit.passwordChange).toEqual({ limit: 5, ttlMs: 60000 });
+  });
+
+  it('should read the password change rate limit from the environment', () => {
+    process.env.RATE_LIMIT_PASSWORD_CHANGE_LIMIT = '2';
+    process.env.RATE_LIMIT_PASSWORD_CHANGE_TTL_MS = '3000';
+
+    expect(configuration().rateLimit.passwordChange).toEqual({ limit: 2, ttlMs: 3000 });
   });
 
   it('should default argon2 to 64 MiB, 3 iterations and parallelism 4', () => {

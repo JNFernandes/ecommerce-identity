@@ -1,6 +1,19 @@
-import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  NotFoundException,
+  UnauthorizedException,
+} from '@nestjs/common';
+import { GUARDS_METADATA } from '@nestjs/common/constants';
+import { ThrottlerGuard } from '@nestjs/throttler';
+import { THROTTLER_SKIP } from '@nestjs/throttler/dist/throttler.constants';
 import { CommandBus, QueryBus } from '@nestjs/cqrs';
+import {
+  ALL_THROTTLERS,
+  PASSWORD_CHANGE_THROTTLER,
+} from '../../../src/controllers/login-throttle.tracker';
 import { UsersController } from '../../../src/controllers/users.controller';
+import { ChangePasswordCommand } from '../../../src/commands/change-password.command';
 import { ChangeUserRolesCommand } from '../../../src/commands/change-user-roles.command';
 import { ChangeUserStatusCommand } from '../../../src/commands/change-user-status.command';
 import { CreateUserCommand } from '../../../src/commands/create-user.command';
@@ -8,16 +21,19 @@ import { AuthenticatedPrincipal } from '../../../src/domain/authenticated-princi
 import { CannotDisableSelfError } from '../../../src/domain/errors/cannot-disable-self.error';
 import { CannotRemoveOwnAdminError } from '../../../src/domain/errors/cannot-remove-own-admin.error';
 import { DuplicateEmailError } from '../../../src/domain/errors/duplicate-email.error';
+import { InvalidCredentialsError } from '../../../src/domain/errors/invalid-credentials.error';
 import { LastActiveAdminError } from '../../../src/domain/errors/last-active-admin.error';
 import { UserNotFoundError } from '../../../src/domain/errors/user-not-found.error';
 import { UserValidationError } from '../../../src/domain/errors/user-validation.error';
 import { Role } from '../../../src/domain/role.enum';
 import { UserStatus } from '../../../src/domain/user-status.enum';
+import { ChangePasswordDto } from '../../../src/dto/change-password.dto';
 import { ChangeUserRolesDto } from '../../../src/dto/change-user-roles.dto';
 import { ChangeUserStatusDto } from '../../../src/dto/change-user-status.dto';
 import { CreateUserDto } from '../../../src/dto/create-user.dto';
 import { CurrentUserResponseDto } from '../../../src/dto/current-user-response.dto';
 import { ListUsersQueryDto } from '../../../src/dto/list-users-query.dto';
+import { LoginResponseDto } from '../../../src/dto/login-response.dto';
 import { UserPageResponseDto } from '../../../src/dto/user-page-response.dto';
 import { UserSummaryResponseDto } from '../../../src/dto/user-summary-response.dto';
 import { GetCurrentUserQuery } from '../../../src/queries/get-current-user.query';
@@ -352,6 +368,74 @@ describe('UsersController', () => {
       const execute = jest.fn().mockRejectedValue(failure);
 
       await expect(controllerWith(execute).create(body(), admin)).rejects.toBe(failure);
+    });
+  });
+
+  describe('changePassword', () => {
+    const caller = AuthenticatedPrincipal.fromClaims({ sub: USER_ID, roles: ['CUSTOMER'] });
+    const result = {
+      accessToken: 'signed.access.token',
+      refreshToken: 'clear-refresh-value',
+      tokenType: 'Bearer' as const,
+      expiresIn: 900,
+    };
+    const handler = Object.getOwnPropertyDescriptor(UsersController.prototype, 'changePassword')
+      ?.value as object;
+
+    function body(): ChangePasswordDto {
+      return Object.assign(new ChangePasswordDto(), {
+        currentPassword: 'correct-horse-battery',
+        newPassword: 'a-brand-new-passphrase',
+      });
+    }
+
+    function controllerWith(execute: jest.Mock): UsersController {
+      return new UsersController({} as QueryBus, { execute } as unknown as CommandBus);
+    }
+
+    it('should dispatch ChangePasswordCommand with the principal id and return the login DTO', async () => {
+      const execute = jest.fn().mockResolvedValue(result);
+
+      const response = await controllerWith(execute).changePassword(body(), caller);
+
+      expect(execute).toHaveBeenCalledWith(
+        new ChangePasswordCommand(USER_ID, 'correct-horse-battery', 'a-brand-new-passphrase'),
+      );
+      expect(response).toEqual(LoginResponseDto.fromResult(result));
+    });
+
+    it('should map a wrong current password to the generic 401', async () => {
+      const execute = jest.fn().mockRejectedValue(new InvalidCredentialsError());
+
+      await expect(controllerWith(execute).changePassword(body(), caller)).rejects.toEqual(
+        new UnauthorizedException('invalid credentials'),
+      );
+    });
+
+    it('should map a policy violation to 400 with its message', async () => {
+      const execute = jest
+        .fn()
+        .mockRejectedValue(new UserValidationError('password must not be the same as the email'));
+
+      await expect(controllerWith(execute).changePassword(body(), caller)).rejects.toEqual(
+        new BadRequestException('password must not be the same as the email'),
+      );
+    });
+
+    it('should rethrow any other error unchanged', async () => {
+      const failure = new Error('boom');
+      const execute = jest.fn().mockRejectedValue(failure);
+
+      await expect(controllerWith(execute).changePassword(body(), caller)).rejects.toBe(failure);
+    });
+
+    it('should be throttled by the password change throttler only', () => {
+      expect(Reflect.getMetadata(GUARDS_METADATA, handler)).toEqual([ThrottlerGuard]);
+      for (const name of ALL_THROTTLERS) {
+        expect(Reflect.getMetadata(`${THROTTLER_SKIP}${name}`, handler)).toBe(
+          name === PASSWORD_CHANGE_THROTTLER ? undefined : true,
+        );
+      }
     });
   });
 });

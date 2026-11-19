@@ -12,6 +12,8 @@ import {
   Post,
   Put,
   Query,
+  UnauthorizedException,
+  UseGuards,
 } from '@nestjs/common';
 import { CommandBus, QueryBus } from '@nestjs/cqrs';
 import {
@@ -23,7 +25,11 @@ import {
   ApiOperation,
   ApiParam,
   ApiTags,
+  ApiTooManyRequestsResponse,
+  ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
+import { ThrottlerGuard } from '@nestjs/throttler';
+import { ChangePasswordCommand } from '../commands/change-password.command';
 import { ChangeUserRolesCommand } from '../commands/change-user-roles.command';
 import { ChangeUserStatusCommand } from '../commands/change-user-status.command';
 import { CreateUserCommand } from '../commands/create-user.command';
@@ -31,15 +37,18 @@ import { AuthenticatedPrincipal } from '../domain/authenticated-principal';
 import { CannotDisableSelfError } from '../domain/errors/cannot-disable-self.error';
 import { CannotRemoveOwnAdminError } from '../domain/errors/cannot-remove-own-admin.error';
 import { DuplicateEmailError } from '../domain/errors/duplicate-email.error';
+import { InvalidCredentialsError } from '../domain/errors/invalid-credentials.error';
 import { LastActiveAdminError } from '../domain/errors/last-active-admin.error';
 import { UserNotFoundError } from '../domain/errors/user-not-found.error';
 import { UserValidationError } from '../domain/errors/user-validation.error';
 import { Role } from '../domain/role.enum';
+import { ChangePasswordDto } from '../dto/change-password.dto';
 import { ChangeUserRolesDto } from '../dto/change-user-roles.dto';
 import { ChangeUserStatusDto } from '../dto/change-user-status.dto';
 import { CreateUserDto } from '../dto/create-user.dto';
 import { CurrentUserResponseDto } from '../dto/current-user-response.dto';
 import { ListUsersQueryDto } from '../dto/list-users-query.dto';
+import { LoginResponseDto } from '../dto/login-response.dto';
 import { UserPageResponseDto } from '../dto/user-page-response.dto';
 import { UserSummaryResponseDto } from '../dto/user-summary-response.dto';
 import { GetCurrentUserQuery } from '../queries/get-current-user.query';
@@ -47,8 +56,10 @@ import { GetUserQuery } from '../queries/get-user.query';
 import { ListUsersQuery } from '../queries/list-users.query';
 import { UserPageReadModel, UserSummaryReadModel } from '../queries/user-summary.read-model';
 import { CurrentUserReadModel } from '../services/get-current-user.service';
+import { LoginResult } from '../services/login.service';
 import { CurrentUser } from './auth/current-user.decorator';
 import { Roles } from './auth/roles.decorator';
+import { onlyThrottlers, PASSWORD_CHANGE_THROTTLER } from './login-throttle.tracker';
 
 /** Endpoints about users: the caller's own account, and the admin views of every account. */
 @ApiTags('users')
@@ -56,7 +67,8 @@ import { Roles } from './auth/roles.decorator';
 export class UsersController {
   /**
    * @param queryBus Dispatches the read queries.
-   * @param commandBus Dispatches the status change, role change and user creation commands.
+   * @param commandBus Dispatches the status change, role change, user creation and password change
+   * commands.
    */
   constructor(
     private readonly queryBus: QueryBus,
@@ -108,6 +120,63 @@ export class UsersController {
       new GetCurrentUserQuery(principal.userId),
     );
     return CurrentUserResponseDto.from(model);
+  }
+
+  /**
+   * Changes the caller's own password. Every refresh token of the user is revoked and a new pair is
+   * returned, so the caller stays signed in and every other session ends. Access tokens already
+   * issued stay valid until they expire. Rate limited per user id and client IP; every request
+   * counts.
+   *
+   * @param dto Both passwords, already shape-validated.
+   * @param principal The caller; the user id comes only from the verified token.
+   * @throws UnauthorizedException When the current password is wrong.
+   * @throws BadRequestException When the new password breaks the policy or equals the current one.
+   */
+  @Post('me/password')
+  @Roles(Role.CUSTOMER, Role.ADMIN)
+  @HttpCode(200)
+  @UseGuards(ThrottlerGuard)
+  @onlyThrottlers(PASSWORD_CHANGE_THROTTLER)
+  @ApiOperation({
+    summary: 'Change my password',
+    description:
+      'Customers and admins. Checks the current password, then applies the registration policy ' +
+      '(10 to 128 characters, not the email) and requires a different password. In one ' +
+      'transaction it stores the new hash, revokes every refresh token of the user (every ' +
+      'session, this one included) and issues a new pair, returned here in the login shape. ' +
+      'Access tokens already issued stay valid until they expire. Rate limited per user and ' +
+      'client IP. No event is published.',
+  })
+  @ApiOkResponse({ type: LoginResponseDto, description: 'Password changed; new tokens issued' })
+  @ApiBadRequestResponse({
+    description:
+      'Missing, empty or non-string field, unknown property, invalid JSON, or the new password ' +
+      'breaks the policy or equals the current one',
+  })
+  @ApiUnauthorizedResponse({
+    description:
+      'Missing or invalid token, user disabled or deleted, or wrong current password (generic)',
+  })
+  @ApiTooManyRequestsResponse({ description: 'Too many attempts for this user from this IP' })
+  async changePassword(
+    @Body() dto: ChangePasswordDto,
+    @CurrentUser() principal: AuthenticatedPrincipal,
+  ): Promise<LoginResponseDto> {
+    try {
+      const result = await this.commandBus.execute<ChangePasswordCommand, LoginResult>(
+        new ChangePasswordCommand(principal.userId, dto.currentPassword, dto.newPassword),
+      );
+      return LoginResponseDto.fromResult(result);
+    } catch (error) {
+      if (error instanceof InvalidCredentialsError) {
+        throw new UnauthorizedException('invalid credentials');
+      }
+      if (error instanceof UserValidationError) {
+        throw new BadRequestException(error.message);
+      }
+      throw error;
+    }
   }
 
   /**

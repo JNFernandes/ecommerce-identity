@@ -42,7 +42,7 @@ access token still works.
   id only. Reuse `LoginService` issuing code (lines ~73–110); extract a `SessionIssuer` helper only
   if duplication exceeds a few lines. Unit tests `tests/unit/services/change-password.service.spec.ts`:
   each failure path changes nothing (tx not called); success returns tokens; logs contain no secret.
-- [ ] T004 [US1] Add `src/dto/change-password.dto.ts` (`currentPassword`, `newPassword`:
+- [X] T004 [US1] Add `src/dto/change-password.dto.ts` (`currentPassword`, `newPassword`:
   `@IsString`, `@IsNotEmpty`, Swagger + JSDoc; length/email policy stays in domain). Add
   `POST /users/me/password` to `src/controllers/users.controller.ts`: `@Roles(Role.CUSTOMER,
   Role.ADMIN)`, `@HttpCode(200)`, `@UseGuards(ThrottlerGuard)`, response `LoginResponseDto`, map

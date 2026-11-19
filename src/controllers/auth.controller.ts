@@ -21,7 +21,7 @@ import {
   ApiTooManyRequestsResponse,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
-import { SkipThrottle, ThrottlerGuard } from '@nestjs/throttler';
+import { ThrottlerGuard } from '@nestjs/throttler';
 import { LoginCommand } from '../commands/login.command';
 import { LogoutCommand } from '../commands/logout.command';
 import { RefreshCommand } from '../commands/refresh.command';
@@ -41,35 +41,11 @@ import {
   LOGIN_EMAIL_THROTTLER,
   LOGIN_IP_THROTTLER,
   LOGOUT_THROTTLER,
+  onlyThrottlers,
   REFRESH_THROTTLER,
+  REGISTER_THROTTLER,
 } from './login-throttle.tracker';
 import { Public } from './auth/public.decorator';
-
-/** Name of the throttler that limits `POST /auth/register` per client IP. */
-export const REGISTER_THROTTLER = 'register';
-
-/** Every named throttler registered by the app. */
-const ALL_THROTTLERS = [
-  REGISTER_THROTTLER,
-  LOGIN_IP_THROTTLER,
-  LOGIN_EMAIL_THROTTLER,
-  REFRESH_THROTTLER,
-  LOGOUT_THROTTLER,
-] as const;
-
-/**
- * Skips every named throttler except the route's own, so each route only counts against its own
- * buckets.
- *
- * @param own The throttlers that apply to the route.
- */
-function onlyThrottlers(...own: string[]): MethodDecorator & ClassDecorator {
-  return SkipThrottle(
-    Object.fromEntries(
-      ALL_THROTTLERS.filter((name) => !own.includes(name)).map((name) => [name, true]),
-    ),
-  );
-}
 
 /** Public authentication endpoints. */
 @ApiTags('auth')

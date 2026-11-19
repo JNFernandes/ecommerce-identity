@@ -11,6 +11,7 @@ const LATER_MIGRATIONS = [
   'CreateRefreshTokensAndUserLastLogin20261117140000',
   'AddUserListIndexes20261118120000',
   'CreateAuditRecords20261119120000',
+  'AddAuditRecordIndexes20261119130000',
 ];
 
 /** Inserts a customer row with the given email. */

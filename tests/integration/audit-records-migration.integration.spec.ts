@@ -6,6 +6,16 @@ import { buildDataSourceOptions } from '../../src/infra/database/typeorm-options
 jest.setTimeout(180_000);
 
 const MIGRATION = 'CreateAuditRecords20261119120000';
+const INDEX_MIGRATION = 'AddAuditRecordIndexes20261119130000';
+
+/** Definitions of the US-11 indexes on `audit_records`, keyed by name. */
+async function listIndexes(dataSource: DataSource): Promise<Record<string, string>> {
+  const rows: { indexname: string; indexdef: string }[] = await dataSource.query(
+    `SELECT indexname, indexdef FROM pg_indexes
+     WHERE tablename = 'audit_records' AND indexname LIKE 'IDX_audit_records_%'`,
+  );
+  return Object.fromEntries(rows.map((row) => [row.indexname, row.indexdef]));
+}
 
 interface ColumnRow {
   column_name: string;
@@ -106,7 +116,26 @@ describe('audit_records migration (integration)', () => {
     expect(rows).toHaveLength(1);
   });
 
-  it('should drop the table, trigger and function on down and re-apply cleanly', async () => {
+  it('should create the paging index and the actor and target filter indexes', async () => {
+    const indexes = await listIndexes(dataSource);
+
+    expect(Object.keys(indexes).sort()).toEqual([
+      'IDX_audit_records_actor_occurred_at_id',
+      'IDX_audit_records_occurred_at_id',
+      'IDX_audit_records_target_occurred_at_id',
+    ]);
+    expect(indexes.IDX_audit_records_occurred_at_id).toContain('("occurredAt" DESC, id DESC)');
+    expect(indexes.IDX_audit_records_actor_occurred_at_id).toContain(
+      '("actorId", "occurredAt" DESC, id DESC)',
+    );
+    expect(indexes.IDX_audit_records_target_occurred_at_id).toContain(
+      '("targetId", "occurredAt" DESC, id DESC)',
+    );
+  });
+
+  it('should drop the table, trigger, function and indexes on down and re-apply cleanly', async () => {
+    await dataSource.undoLastMigration();
+    expect(await listIndexes(dataSource)).toEqual({});
     await dataSource.undoLastMigration();
 
     const tables: unknown[] = await dataSource.query(
@@ -119,6 +148,6 @@ describe('audit_records migration (integration)', () => {
     expect(functions).toEqual([]);
 
     const applied = await dataSource.runMigrations();
-    expect(applied.map((migration) => migration.name)).toEqual([MIGRATION]);
+    expect(applied.map((migration) => migration.name)).toEqual([MIGRATION, INDEX_MIGRATION]);
   });
 });

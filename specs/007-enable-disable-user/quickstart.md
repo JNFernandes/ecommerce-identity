@@ -38,3 +38,16 @@ Stop Kafka and repeat step 1 with a new customer → same results.
 ## Automated
 
 `npm run test` (Docker required).
+
+## Result (2026-11-19, `node dist/main.js` on port 3099 against a throwaway `postgres:16-alpine` container, Kafka unreachable)
+
+A throwaway database kept the developer's local `identity` database untouched, and an unreachable broker kept registrations from publishing to the shared local Kafka. The steps were driven by a small `fetch` script.
+
+- **Step 1**: disable → 200 `DISABLED`, body byte-identical to `GET /users/{id}`; customer login, refresh with `RT_C` and `GET /users/me` with `AT_C` → 401. Log: one `user status changed: actorId=… targetId=… from=ACTIVE to=DISABLED revokedTokens=1` line. ✅
+- **Step 2**: repeated `DISABLED` → 200 with the same body; no new status-change line. ✅
+- **Step 3**: `ACTIVE` → 200; old `RT_C` → 401; customer login → 200; log line `from=DISABLED to=ACTIVE revokedTokens=0`. ✅
+- **Step 4**: admin disables self → 409 `an admin cannot disable their own account`. ✅
+- **Step 5**: `abc` → 400; unknown UUID → 404 `user not found`; `{"status":"disabled"}`, `{}`, `{"status":"DISABLED","x":1}` and malformed JSON → 400; customer token → 403; no token → 401. ✅
+- **Step 6**: with Kafka unreachable, a second customer is disabled (200), then refused at login, refresh and `/users/me` (401). ✅
+- **Logs**: no email, password, access or refresh token, or `Authorization`, in any line. ✅
+- **Automated**: `npm run test`, 924 tests pass (unit, integration, component). ✅

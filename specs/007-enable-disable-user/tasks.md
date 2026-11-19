@@ -132,7 +132,7 @@ No setup tasks: no package, configuration or migration changes (plan "Technical 
 - [X] T024 [P] Update `README.md`: `PATCH /users/{id}/status` under Endpoints (body, responses, safeguards, idempotency), a row in the access control table, and in Session trade-offs: a disabled user's access tokens stay valid on token-only routes until `exp` (≤ `JWT_ACCESS_TTL_SECONDS`), while `/users/me`, login, refresh and this endpoint refuse at once (FR-013). Commit `docs(US-07): document enabling and disabling users`.
 - [X] T025 [P] Update `src/README.md` with `ChangeUserStatusService`, `LastActiveAdminPolicy`, `UserStatusTx`, the status-change lock order and the new refresh lock order (R3, R6). Commit `docs(US-07): describe the status flow in the module README`.
 - [X] T026 [P] Add `docs/adr/0006-status-changes-serialized-and-sessions-revoked.md` from `docs/adr/template.md` ("Status changes are serialized; disabling revokes sessions; access tokens expire naturally": R3 with the rejected row-lock order, R6, R7, the access-token trade-off) and index it in `docs/adr/README.md` (R15). Commit `docs(US-07): add ADR 0006 on status changes`.
-- [ ] T027 Run `specs/007-enable-disable-user/quickstart.md` manually against `npm run start:dev` and record the results (date, pass/fail per step) at the end of the quickstart. Commit `docs(US-07): record the manual quickstart run`.
+- [X] T027 Run `specs/007-enable-disable-user/quickstart.md` manually against `npm run start:dev` and record the results (date, pass/fail per step) at the end of the quickstart. Commit `docs(US-07): record the manual quickstart run`.
 
 ---
 

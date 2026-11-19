@@ -262,6 +262,23 @@ describe('User', () => {
       });
     });
 
+    describe('assertCanBeDisabledBy', () => {
+      it('should throw for the user itself and change nothing', () => {
+        const user = stored(UserStatus.ACTIVE, [Role.ADMIN]);
+
+        expect(() => user.assertCanBeDisabledBy(user.id)).toThrow(CannotDisableSelfError);
+        expect(user.status).toBe(UserStatus.ACTIVE);
+      });
+
+      it('should pass for another admin and change nothing', () => {
+        const user = stored(UserStatus.ACTIVE);
+
+        expect(() => user.assertCanBeDisabledBy(ADMIN_ID)).not.toThrow();
+        expect(user.status).toBe(UserStatus.ACTIVE);
+        expect(user.updatedAt).toEqual(UPDATED_AT);
+      });
+    });
+
     describe('enable', () => {
       it('should enable a DISABLED user, set updatedAt and return true', () => {
         const user = stored(UserStatus.DISABLED);

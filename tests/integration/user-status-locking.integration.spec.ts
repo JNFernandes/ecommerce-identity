@@ -5,6 +5,7 @@ import { PostgreSqlContainer, StartedPostgreSqlContainer } from '@testcontainers
 import { ChangeUserStatusCommand } from '../../src/commands/change-user-status.command';
 import { RefreshCommand } from '../../src/commands/refresh.command';
 import { Email } from '../../src/domain/email.value-object';
+import { InvalidAccessTokenError } from '../../src/domain/errors/invalid-access-token.error';
 import { InvalidCredentialsError } from '../../src/domain/errors/invalid-credentials.error';
 import { InvalidRefreshTokenError } from '../../src/domain/errors/invalid-refresh-token.error';
 import { RefreshToken } from '../../src/domain/refresh-token.aggregate';
@@ -241,6 +242,45 @@ describe('User status change locking (integration)', () => {
     expect(timeline.events).toEqual(['disable holds target row lock', 'disable committing']);
     expect(await allTokens(user.id)).toBe(1);
     expect(await liveTokens(user.id)).toBe(0);
+  });
+
+  it('should let exactly one of two admins disabling each other win, 20 times in a row', async () => {
+    for (let round = 0; round < 20; round += 1) {
+      const first = User.registerAdmin(
+        Email.create(`cross-a-${round}@example.com`),
+        UserName.create('A'),
+        'h',
+      );
+      const second = User.registerAdmin(
+        Email.create(`cross-b-${round}@example.com`),
+        UserName.create('B'),
+        'h',
+      );
+      await users.save(first);
+      await users.save(second);
+      const service = statusService(users);
+
+      const results = await Promise.all(
+        [
+          new ChangeUserStatusCommand(second.id, UserStatus.DISABLED, first.id),
+          new ChangeUserStatusCommand(first.id, UserStatus.DISABLED, second.id),
+        ].map((command) =>
+          service.execute(command).then(
+            () => 'ok' as const,
+            (error: unknown) => error,
+          ),
+        ),
+      );
+
+      expect(results.filter((result) => result === 'ok')).toHaveLength(1);
+      const [failure] = results.filter((result) => result !== 'ok');
+      expect(failure).toBeInstanceOf(InvalidAccessTokenError);
+      const statuses = [
+        (await users.findById(first.id))?.status,
+        (await users.findById(second.id))?.status,
+      ].sort();
+      expect(statuses).toEqual([UserStatus.ACTIVE, UserStatus.DISABLED]);
+    }
   });
 
   it('should store no token for a login that saves after a concurrent disable commits', async () => {

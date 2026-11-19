@@ -187,6 +187,19 @@ export class User {
   }
 
   /**
+   * Checks the self rule of {@link User.disable} without changing anything, so callers can apply
+   * other checks (such as `LastActiveAdminPolicy`) after it and before the change.
+   *
+   * @param actingAdminId The id of the admin making the change.
+   * @throws CannotDisableSelfError When the admin targets their own account.
+   */
+  assertCanBeDisabledBy(actingAdminId: string): void {
+    if (this.props.id === actingAdminId) {
+      throw new CannotDisableSelfError();
+    }
+  }
+
+  /**
    * Disables the account on behalf of an admin. Setting the status the user already has is a
    * no-op. The self rule is checked first, so it applies even when the user is already disabled.
    *
@@ -196,9 +209,7 @@ export class User {
    * @throws CannotDisableSelfError When the admin targets their own account.
    */
   disable(actingAdminId: string, at: Date): boolean {
-    if (this.props.id === actingAdminId) {
-      throw new CannotDisableSelfError();
-    }
+    this.assertCanBeDisabledBy(actingAdminId);
     if (this.props.status === UserStatus.DISABLED) {
       return false;
     }

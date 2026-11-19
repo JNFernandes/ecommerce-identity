@@ -9,6 +9,7 @@ There are no new tables, columns or indexes. `users.status` (`user_status_enum`:
 | `disable(actingAdminId: string, at: Date): boolean` | Throws `CannotDisableSelfError` if `id === actingAdminId` (checked first). Already `DISABLED` → `false`, no change. Otherwise → `DISABLED`, `updatedAt = at`, returns `true` |
 | `enable(at: Date): boolean` | Already `ACTIVE` → `false`. Otherwise → `ACTIVE`, `updatedAt = at`, returns `true`. Never touches tokens |
 | `isActiveAdmin(): boolean` | `status === ACTIVE && roles.includes(ADMIN)` |
+| `assertCanBeDisabledBy(actingAdminId: string): void` | Throws `CannotDisableSelfError` if `id === actingAdminId`; changes nothing. `disable` calls it first |
 
 ### State transitions
 
@@ -20,7 +21,7 @@ same status --> no-op (200, nothing written or logged)
 
 ## `LastActiveAdminPolicy` (domain, new)
 
-`assertCanDisable({ target: User; activeAdminCount: number }): void` throws `LastActiveAdminError` when `target.isActiveAdmin()` and `activeAdminCount <= 1`. It is called only for an effective disable of an `ADMIN`, with the count read before the write.
+`assertCanDisable({ target: User; activeAdminCount: number }): void` throws `LastActiveAdminError` when `target.isActiveAdmin()` and `activeAdminCount <= 1`. It is called only when the target is an `ACTIVE` admin, after the self check and before `disable`, with the count read before the write.
 
 ## Domain errors (new)
 

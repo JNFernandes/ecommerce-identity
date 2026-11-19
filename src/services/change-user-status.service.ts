@@ -6,6 +6,7 @@ import {
   InvalidAccessTokenError,
 } from '../domain/errors/invalid-access-token.error';
 import { UserNotFoundError } from '../domain/errors/user-not-found.error';
+import { LastActiveAdminPolicy } from '../domain/last-active-admin-policy';
 import { User } from '../domain/user.aggregate';
 import { UserStatus } from '../domain/user-status.enum';
 import { toUserSummary, UserSummaryReadModel } from '../queries/user-summary.read-model';
@@ -26,7 +27,7 @@ interface StatusChangeOutcome {
 
 /**
  * Handles `ChangeUserStatusCommand` (`PATCH /users/{id}/status`, admins only). Orchestration only:
- * the rules live in `User`.
+ * the rules live in `User` and `LastActiveAdminPolicy`.
  *
  * Everything runs in one transaction, in the lock order of `UserStatusTx`: the status-change
  * advisory lock, then the acting admin is re-read (they may have been disabled since their token
@@ -59,6 +60,7 @@ export class ChangeUserStatusService implements ICommandHandler<
    * `ACTIVE` admin.
    * @throws UserNotFoundError When no user has the target id.
    * @throws CannotDisableSelfError When the admin disables their own account.
+   * @throws LastActiveAdminError When the target is the last `ACTIVE` admin.
    */
   async execute(command: ChangeUserStatusCommand): Promise<UserSummaryReadModel> {
     const now = this.clock.now();
@@ -91,6 +93,13 @@ export class ChangeUserStatusService implements ICommandHandler<
     const from = user.status;
 
     if (command.status === UserStatus.DISABLED) {
+      // The self rule wins over the last-admin rule, so it is checked first.
+      user.assertCanBeDisabledBy(command.actingAdminId);
+      if (user.isActiveAdmin()) {
+        // The advisory lock makes this count exact until the commit.
+        const activeAdminCount = await tx.countActiveAdmins();
+        LastActiveAdminPolicy.assertCanDisable({ target: user, activeAdminCount });
+      }
       const changed = user.disable(command.actingAdminId, now);
       if (!changed) {
         return { user, from, changed, revokedTokens: 0 };

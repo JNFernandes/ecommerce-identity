@@ -6,6 +6,7 @@ import {
   AccessTokenFailureReason,
   InvalidAccessTokenError,
 } from '../../../src/domain/errors/invalid-access-token.error';
+import { LastActiveAdminError } from '../../../src/domain/errors/last-active-admin.error';
 import { UserNotFoundError } from '../../../src/domain/errors/user-not-found.error';
 import { Role } from '../../../src/domain/role.enum';
 import { User } from '../../../src/domain/user.aggregate';
@@ -190,6 +191,75 @@ describe('ChangeUserStatusService', () => {
 
       expect(tx.wrote()).toBe(false);
       expect(loggedLines()).toEqual([]);
+    });
+  });
+
+  describe('last active admin', () => {
+    const OTHER_ADMIN_ID = '00000000-0000-4000-8000-00000000000b';
+    let otherAdmin: User;
+
+    beforeEach(() => {
+      otherAdmin = stored(OTHER_ADMIN_ID, 'other@example.com', Role.ADMIN, UserStatus.ACTIVE);
+      setUp(admin, otherAdmin, customer);
+    });
+
+    it('should refuse to disable the last ACTIVE admin and write nothing', async () => {
+      tx.activeAdmins = 1;
+
+      await expect(change(OTHER_ADMIN_ID, UserStatus.DISABLED)).rejects.toBeInstanceOf(
+        LastActiveAdminError,
+      );
+
+      expect(tx.wrote()).toBe(false);
+      expect(otherAdmin.status).toBe(UserStatus.ACTIVE);
+      expect(loggedLines()).toEqual([]);
+    });
+
+    it('should disable an admin when another ACTIVE admin exists', async () => {
+      tx.activeAdmins = 2;
+
+      await expect(change(OTHER_ADMIN_ID, UserStatus.DISABLED)).resolves.toMatchObject({
+        status: UserStatus.DISABLED,
+      });
+
+      expect(tx.calls).toEqual([
+        'lockStatusChanges',
+        `findById:${ADMIN_ID}`,
+        `findByIdForUpdate:${OTHER_ADMIN_ID}`,
+        'countActiveAdmins',
+        'saveStatus',
+        `revokeAllRefreshTokens:${OTHER_ADMIN_ID}:${NOW.toISOString()}`,
+      ]);
+    });
+
+    it('should report the self error, not the last-admin one, for the last admin disabling itself', async () => {
+      setUp(admin, customer);
+      tx.activeAdmins = 1;
+
+      await expect(change(ADMIN_ID, UserStatus.DISABLED)).rejects.toBeInstanceOf(
+        CannotDisableSelfError,
+      );
+
+      expect(tx.calls).not.toContain('countActiveAdmins');
+      expect(tx.wrote()).toBe(false);
+    });
+
+    it('should not count admins for a customer target', async () => {
+      await change(CUSTOMER_ID, UserStatus.DISABLED);
+
+      expect(tx.calls).not.toContain('countActiveAdmins');
+    });
+
+    it('should not count admins for an already DISABLED admin target', async () => {
+      setUp(admin, stored(OTHER_ADMIN_ID, 'other@example.com', Role.ADMIN, UserStatus.DISABLED));
+      tx.activeAdmins = 1;
+
+      await expect(change(OTHER_ADMIN_ID, UserStatus.DISABLED)).resolves.toMatchObject({
+        status: UserStatus.DISABLED,
+      });
+
+      expect(tx.calls).not.toContain('countActiveAdmins');
+      expect(tx.wrote()).toBe(false);
     });
   });
 

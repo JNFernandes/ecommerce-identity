@@ -1,6 +1,7 @@
 import { Logger } from '@nestjs/common';
 import { CommandHandler, ICommandHandler } from '@nestjs/cqrs';
 import { ChangeUserStatusCommand } from '../commands/change-user-status.command';
+import { AuditRecord } from '../domain/audit/audit-record';
 import {
   AccessTokenFailureReason,
   InvalidAccessTokenError,
@@ -32,8 +33,9 @@ interface StatusChangeOutcome {
  * Everything runs in one transaction, in the lock order of `AdminTx`: the status-change
  * advisory lock, then the acting admin is re-read (they may have been disabled since their token
  * was issued), then the target row is locked. A disable writes the status and revokes every refresh
- * token of the user in the same transaction; an enable writes only the status. Setting the status a
- * user already has writes nothing.
+ * token of the user in the same transaction; an enable writes only the status. Every effective
+ * change also appends a `USER_STATUS_CHANGED` audit record in the same transaction (constitution
+ * XI). Setting the status a user already has writes nothing, not even an audit record.
  */
 @CommandHandler(ChangeUserStatusCommand)
 export class ChangeUserStatusService implements ICommandHandler<
@@ -106,6 +108,7 @@ export class ChangeUserStatusService implements ICommandHandler<
       }
       await tx.saveStatus(user);
       const revokedTokens = await tx.revokeAllRefreshTokens(user.id, now);
+      await tx.appendAudit(AuditRecord.statusChanged(command.actingAdminId, user, from, now));
       return { user, from, changed, revokedTokens };
     }
 
@@ -113,6 +116,7 @@ export class ChangeUserStatusService implements ICommandHandler<
     const changed = user.enable(now);
     if (changed) {
       await tx.saveStatus(user);
+      await tx.appendAudit(AuditRecord.statusChanged(command.actingAdminId, user, from, now));
     }
     return { user, from, changed, revokedTokens: 0 };
   }

@@ -1,3 +1,4 @@
+import { AuditAction } from '../../../src/domain/audit/audit-action.enum';
 import { AuditRecord } from '../../../src/domain/audit/audit-record';
 import { Logger } from '@nestjs/common';
 import { ChangeUserStatusCommand } from '../../../src/commands/change-user-status.command';
@@ -44,6 +45,7 @@ function stored(id: string, email: string, role: Role, status: UserStatus): User
 class FakeTx implements AdminTx {
   readonly calls: string[] = [];
   readonly saved: User[] = [];
+  readonly audits: AuditRecord[] = [];
   revokedCount = 3;
   activeAdmins = 2;
 
@@ -87,6 +89,7 @@ class FakeTx implements AdminTx {
 
   appendAudit(record: AuditRecord): Promise<void> {
     this.calls.push(`appendAudit:${record.action}`);
+    this.audits.push(record);
     return Promise.resolve();
   }
 
@@ -145,7 +148,21 @@ describe('ChangeUserStatusService', () => {
         `findByIdForUpdate:${CUSTOMER_ID}`,
         'saveStatus',
         `revokeAllRefreshTokens:${CUSTOMER_ID}:${NOW.toISOString()}`,
+        'appendAudit:USER_STATUS_CHANGED',
       ]);
+    });
+
+    it('should append one USER_STATUS_CHANGED audit record ACTIVE to DISABLED', async () => {
+      await change(CUSTOMER_ID, UserStatus.DISABLED);
+
+      expect(tx.audits).toHaveLength(1);
+      const [record] = tx.audits;
+      expect(record.action).toBe(AuditAction.USER_STATUS_CHANGED);
+      expect(record.actorId).toBe(ADMIN_ID);
+      expect(record.targetId).toBe(CUSTOMER_ID);
+      expect(record.before).toEqual({ status: UserStatus.ACTIVE });
+      expect(record.after).toEqual({ status: UserStatus.DISABLED });
+      expect(record.occurredAt).toEqual(NOW);
     });
 
     it('should save the DISABLED status with the change time', async () => {
@@ -244,6 +261,7 @@ describe('ChangeUserStatusService', () => {
         'countActiveAdmins',
         'saveStatus',
         `revokeAllRefreshTokens:${OTHER_ADMIN_ID}:${NOW.toISOString()}`,
+        'appendAudit:USER_STATUS_CHANGED',
       ]);
     });
 
@@ -293,8 +311,12 @@ describe('ChangeUserStatusService', () => {
         `findById:${ADMIN_ID}`,
         `findByIdForUpdate:${CUSTOMER_ID}`,
         'saveStatus',
+        'appendAudit:USER_STATUS_CHANGED',
       ]);
       expect(tx.saved[0].updatedAt).toEqual(NOW);
+      expect(tx.audits).toHaveLength(1);
+      expect(tx.audits[0].before).toEqual({ status: UserStatus.DISABLED });
+      expect(tx.audits[0].after).toEqual({ status: UserStatus.ACTIVE });
       expect(loggedLines()).toEqual([
         `user status changed: actorId=${ADMIN_ID} targetId=${CUSTOMER_ID} ` +
           'from=DISABLED to=ACTIVE revokedTokens=0',

@@ -26,7 +26,8 @@ export const ADMIN_CHANGES_LOCK_KEY: readonly [number, number] = [0x1d_57a7, 1];
  * {@link UserRepository.inAdminTransaction}).
  *
  * Lock order: always `lockAdminChanges` → `findById` (acting admin, no lock) →
- * `findByIdForUpdate` (target row) → writes. The advisory lock is taken before any row lock, so
+ * `findByIdForUpdate` (target row) → writes → `appendAudit` (last, so the record describes what
+ * was written). The advisory lock is taken before any row lock, so
  * two admin mutations never wait on each other's rows and cannot deadlock.
  */
 export interface AdminTx {

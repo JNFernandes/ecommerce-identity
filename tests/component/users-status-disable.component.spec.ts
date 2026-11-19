@@ -137,4 +137,25 @@ describe('PATCH /users/{id}/status: disable (component)', () => {
     expect(response.body).toMatchObject({ id, status: 'DISABLED', lastLoginAt: null });
     expect(await tokenRows(id)).toEqual([]);
   });
+  it('should write one USER_STATUS_CHANGED audit record for the disable, with ids and statuses only', async () => {
+    const [actor] = (await dataSource.query('SELECT "id" FROM "users" WHERE "email" = $1', [
+      ADMIN_EMAIL,
+    ])) as { id: string }[];
+
+    const rows: { actorId: string; action: string; before: unknown; after: unknown }[] =
+      await dataSource.query(
+        `SELECT "actorId", "action", "before", "after" FROM "audit_records" WHERE "targetId" = $1`,
+        [customer.userId],
+      );
+
+    expect(rows).toEqual([
+      {
+        actorId: actor.id,
+        action: 'USER_STATUS_CHANGED',
+        before: { status: 'ACTIVE' },
+        after: { status: 'DISABLED' },
+      },
+    ]);
+    expect(JSON.stringify(rows)).not.toContain(CUSTOMER_EMAIL);
+  });
 });

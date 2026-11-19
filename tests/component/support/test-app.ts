@@ -110,6 +110,8 @@ export async function startPostgres(): Promise<StartedPostgreSqlContainer> {
   process.env.ARGON2_MEMORY_COST_KIB = '1024';
   process.env.ARGON2_TIME_COST = '2';
   process.env.ARGON2_PARALLELISM = '1';
+  // The outbound retry worker would change dead-letter rows mid-test; tests that need it enable it.
+  process.env.OUTBOUND_RETRY_ENABLED = 'false';
   useTestSigningKey();
   return container;
 }

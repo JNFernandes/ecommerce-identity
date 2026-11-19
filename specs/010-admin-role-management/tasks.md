@@ -9,7 +9,7 @@ tests → docs) rather than one phase per story; labels show which stories each 
 
 ## Phase 1: Domain
 
-- [ ] T001 [US1] [US2] [US3] [US4] Add `User.changeRoles(roles, actorId)` returning `{ changed, removed, customerCreated }` (no-op on equal sets, checked first; throws new `CannotRemoveOwnAdminError` 409; first `CUSTOMER` grant without `customerId` creates one ≠ id and records `UserRegistered`; removing `CUSTOMER` keeps `customerId`) in `src/domain/user.aggregate.ts` and `src/domain/errors/cannot-remove-own-admin.error.ts`; add `LastActiveAdminPolicy.assertCanRemoveAdmin({ target, activeAdminCount })` reusing `LastActiveAdminError` in `src/domain/last-active-admin-policy.ts`; add `AuditAction.ROLES_CHANGED` and `AuditRecord.rolesChanged(actor, user, before, now)` in `src/domain/audit/`; unit tests in `test/unit/`.
+- [X] T001 [US1] [US2] [US3] [US4] Add `User.changeRoles(roles, actorId)` returning `{ changed, removed, customerCreated }` (no-op on equal sets, checked first; throws new `CannotRemoveOwnAdminError` 409; first `CUSTOMER` grant without `customerId` creates one ≠ id and records `UserRegistered`; removing `CUSTOMER` keeps `customerId`) in `src/domain/user.aggregate.ts` and `src/domain/errors/cannot-remove-own-admin.error.ts`; add `LastActiveAdminPolicy.assertCanRemoveAdmin({ target, activeAdminCount })` reusing `LastActiveAdminError` in `src/domain/last-active-admin-policy.ts`; add `AuditAction.ROLES_CHANGED` and `AuditRecord.rolesChanged(actor, user, before, now)` in `src/domain/audit/`; unit tests in `test/unit/`.
 
 ## Phase 2: Persistence
 

@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { Email } from './email.value-object';
 import { CannotDisableSelfError } from './errors/cannot-disable-self.error';
+import { CannotRemoveOwnAdminError } from './errors/cannot-remove-own-admin.error';
 import { InvalidCredentialsError } from './errors/invalid-credentials.error';
 import { UserValidationError } from './errors/user-validation.error';
 import { UserRegistered } from './events/user-registered.event';
@@ -11,11 +12,24 @@ import { UserStatus } from './user-status.enum';
 /** Domain events the `User` aggregate can raise. */
 export type UserDomainEvent = UserRegistered;
 
+/** What {@link User.changeRoles} did. */
+export interface RoleChangeResult {
+  /** Whether the roles changed; `false` for a no-op (same set of roles). */
+  changed: boolean;
+  /** The roles the user lost, empty for a grant-only change. */
+  removed: Role[];
+  /** Whether a new `customerId` was created (first `CUSTOMER` grant, `UserRegistered` recorded). */
+  customerCreated: boolean;
+}
+
 /** Full state of a user, as stored. */
 export interface UserProps {
   /** User id (UUID). */
   id: string;
-  /** Customer id (UUID), set for customers only; `null` for admins. */
+  /**
+   * Customer id (UUID), created with the first `CUSTOMER` role and never removed; `null` for a user
+   * who never held `CUSTOMER`. Dormant while the roles do not include `CUSTOMER`.
+   */
   customerId: string | null;
   /** Normalized email, unique case-insensitively. */
   email: Email;
@@ -51,10 +65,7 @@ export class User {
    */
   static registerCustomer(email: Email, name: UserName, passwordHash: string): User {
     const id = randomUUID();
-    let customerId = randomUUID();
-    while (customerId === id) {
-      customerId = randomUUID();
-    }
+    const customerId = User.newCustomerId(id);
     const now = new Date();
     const user = new User({
       id,
@@ -130,6 +141,15 @@ export class User {
     throw new UserValidationError('roles must be exactly one of CUSTOMER or ADMIN');
   }
 
+  /** A new customer id, always different from the user id. */
+  private static newCustomerId(userId: string): string {
+    let customerId = randomUUID();
+    while (customerId === userId) {
+      customerId = randomUUID();
+    }
+    return customerId;
+  }
+
   /** A new `ACTIVE` admin without `customerId` and without event. */
   private static newAdmin(email: Email, name: UserName, passwordHash: string): User {
     const now = new Date();
@@ -161,7 +181,10 @@ export class User {
     return this.props.id;
   }
 
-  /** Customer id (UUID), or `null` for a user without the customer role. */
+  /**
+   * Customer id (UUID), or `null` for a user who never held the customer role. May be dormant: see
+   * {@link User.activeCustomerId}.
+   */
   get customerId(): string | null {
     return this.props.customerId;
   }
@@ -204,6 +227,11 @@ export class User {
   /** Time of the last successful login, or `null` if the user never logged in. */
   get lastLoginAt(): Date | null {
     return this.props.lastLoginAt;
+  }
+
+  /** The customer id when the roles include `CUSTOMER`, else `null` (a dormant id is hidden). */
+  get activeCustomerId(): string | null {
+    return this.props.roles.includes(Role.CUSTOMER) ? this.props.customerId : null;
   }
 
   /** Whether the user may log in: only `ACTIVE` users can. */
@@ -276,6 +304,65 @@ export class User {
     this.props.status = UserStatus.ACTIVE;
     this.props.updatedAt = at;
     return true;
+  }
+
+  /**
+   * Replaces the user's roles on behalf of an admin. Rules, in order:
+   *
+   * 1. `roles` must be a non-empty list of distinct known roles.
+   * 2. The same set of roles (order ignored) is a no-op, checked before the safeguards.
+   * 3. An admin cannot remove `ADMIN` from themselves.
+   * 4. A first `CUSTOMER` grant to a user without `customerId` creates one (different from the
+   *    id) and records a `UserRegistered` event; an existing `customerId` is reused, and removing
+   *    `CUSTOMER` keeps it. `ADMIN` never touches it.
+   *
+   * The last-active-admin rule needs a count and lives in `LastActiveAdminPolicy`; callers apply it
+   * when `ADMIN` is removed, before persisting.
+   *
+   * @param roles The requested roles.
+   * @param actingAdminId The id of the admin making the change.
+   * @param at The change time, written to `updatedAt` (and the event) only when the roles change.
+   * @returns What changed.
+   * @throws UserValidationError When `roles` is empty, repeats a role or holds an unknown one.
+   * @throws CannotRemoveOwnAdminError When the admin removes `ADMIN` from themselves.
+   */
+  changeRoles(roles: readonly Role[], actingAdminId: string, at: Date): RoleChangeResult {
+    const known: readonly string[] = Object.values(Role);
+    if (
+      roles.length === 0 ||
+      new Set(roles).size !== roles.length ||
+      roles.some((role) => !known.includes(role))
+    ) {
+      throw new UserValidationError('roles must be a non-empty list of distinct CUSTOMER or ADMIN');
+    }
+    const current = this.props.roles;
+    const removed = current.filter((role) => !roles.includes(role));
+    const added = roles.filter((role) => !current.includes(role));
+    if (removed.length === 0 && added.length === 0) {
+      return { changed: false, removed: [], customerCreated: false };
+    }
+    if (removed.includes(Role.ADMIN) && this.props.id === actingAdminId) {
+      throw new CannotRemoveOwnAdminError();
+    }
+
+    let customerCreated = false;
+    if (added.includes(Role.CUSTOMER) && this.props.customerId === null) {
+      const customerId = User.newCustomerId(this.props.id);
+      this.props.customerId = customerId;
+      customerCreated = true;
+      this.domainEvents.push(
+        new UserRegistered({
+          aggregateId: this.props.id,
+          customerId,
+          email: this.props.email.value,
+          name: this.props.name.value,
+          occurredAt: at,
+        }),
+      );
+    }
+    this.props.roles = [...roles];
+    this.props.updatedAt = at;
+    return { changed: true, removed, customerCreated };
   }
 
   /**

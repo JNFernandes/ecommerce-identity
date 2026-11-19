@@ -32,7 +32,7 @@ None: no dependency, migration or config file to create.
 password logs in, old one fails; both old refresh tokens refused; the returned one rotates; the old
 access token still works.
 
-- [ ] T003 [US1] Create `src/commands/change-password.command.ts`
+- [X] T003 [US1] Create `src/commands/change-password.command.ts`
   (`ChangePasswordCommand(userId, currentPassword, newPassword)`, result `LoginResult`) and
   `src/services/change-password.service.ts` (CQRS handler, register in `src/app.module.ts`). Order:
   re-read user (missing/non-`ACTIVE` → US-05 generic 401 error) → `passwordHasher.verify(current)`

@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { SignJWT } from 'jose';
+import { Role } from '../../domain/role.enum';
 import {
   AccessTokenSubject,
   IssuedAccessToken,
@@ -19,7 +20,8 @@ export interface JoseTokenIssuerOptions {
 
 /**
  * `TokenIssuer` that signs RS256 JWTs with jose. Header `{ alg: RS256, kid, typ: JWT }`; claims
- * exactly `sub`, `customerId` (only when set), `roles`, `iss`, `aud`, `iat`, `exp` and `jti`.
+ * exactly `sub`, `customerId` (only when set and the roles include `CUSTOMER`: a dormant id is never
+ * put in a token), `roles`, `iss`, `aud`, `iat`, `exp` and `jti`.
  */
 export class JoseTokenIssuer extends TokenIssuer {
   /**
@@ -42,7 +44,7 @@ export class JoseTokenIssuer extends TokenIssuer {
   async issue(subject: AccessTokenSubject, issuedAt: Date): Promise<IssuedAccessToken> {
     const iat = Math.floor(issuedAt.getTime() / 1000);
     const claims: { roles: string[]; customerId?: string } = { roles: [...subject.roles] };
-    if (subject.customerId !== null) {
+    if (subject.customerId !== null && subject.roles.includes(Role.CUSTOMER)) {
       claims.customerId = subject.customerId;
     }
     const token = await new SignJWT(claims)

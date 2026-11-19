@@ -144,4 +144,25 @@ describe('User.changeRoles', () => {
 
     expect(user.roles).toEqual([Role.ADMIN]);
   });
+
+  describe('previewRoleChange', () => {
+    it('should report the change without applying it', () => {
+      const user = stored([Role.CUSTOMER, Role.ADMIN], CUSTOMER_ID);
+
+      expect(user.previewRoleChange([Role.CUSTOMER], ACTOR)).toEqual({
+        changed: true,
+        removed: [Role.ADMIN],
+      });
+      expect(user.roles).toEqual([Role.CUSTOMER, Role.ADMIN]);
+      expect(user.updatedAt).toBe(UPDATED_AT);
+    });
+
+    it('should apply the self rule', () => {
+      const user = stored([Role.ADMIN], null);
+
+      expect(() => user.previewRoleChange([Role.CUSTOMER], user.id)).toThrow(
+        CannotRemoveOwnAdminError,
+      );
+    });
+  });
 });

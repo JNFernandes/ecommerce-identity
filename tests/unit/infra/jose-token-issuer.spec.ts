@@ -88,6 +88,29 @@ describe('JoseTokenIssuer', () => {
     expect(payload.roles).toEqual(['ADMIN']);
   });
 
+  it('should omit a dormant customerId when the roles do not include CUSTOMER', async () => {
+    const { token } = await issuer.issue(
+      { userId: USER_ID, customerId: CUSTOMER_ID, roles: [Role.ADMIN] },
+      ISSUED_AT,
+    );
+
+    const { payload } = await verify(token);
+
+    expect(payload).not.toHaveProperty('customerId');
+  });
+
+  it('should carry customerId for a user holding both roles', async () => {
+    const { token } = await issuer.issue(
+      { userId: USER_ID, customerId: CUSTOMER_ID, roles: [Role.ADMIN, Role.CUSTOMER] },
+      ISSUED_AT,
+    );
+
+    const { payload } = await verify(token);
+
+    expect(payload.customerId).toBe(CUSTOMER_ID);
+    expect(payload.roles).toEqual(['ADMIN', 'CUSTOMER']);
+  });
+
   it('should give every token a new jti', async () => {
     const first = await verify((await issuer.issue(customer, ISSUED_AT)).token);
     const second = await verify((await issuer.issue(customer, ISSUED_AT)).token);

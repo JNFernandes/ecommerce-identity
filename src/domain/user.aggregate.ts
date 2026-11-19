@@ -307,6 +307,40 @@ export class User {
   }
 
   /**
+   * Checks rules 1 to 3 of {@link User.changeRoles} without changing anything, so callers can apply
+   * other checks (such as `LastActiveAdminPolicy`) after it and before the change.
+   *
+   * @param roles The requested roles.
+   * @param actingAdminId The id of the admin making the change.
+   * @returns Whether the roles would change and which roles would be removed.
+   * @throws UserValidationError When `roles` is empty, repeats a role or holds an unknown one.
+   * @throws CannotRemoveOwnAdminError When the admin removes `ADMIN` from themselves.
+   */
+  previewRoleChange(
+    roles: readonly Role[],
+    actingAdminId: string,
+  ): Pick<RoleChangeResult, 'changed' | 'removed'> {
+    const known: readonly string[] = Object.values(Role);
+    if (
+      roles.length === 0 ||
+      new Set(roles).size !== roles.length ||
+      roles.some((role) => !known.includes(role))
+    ) {
+      throw new UserValidationError('roles must be a non-empty list of distinct CUSTOMER or ADMIN');
+    }
+    const current = this.props.roles;
+    const removed = current.filter((role) => !roles.includes(role));
+    const added = roles.filter((role) => !current.includes(role));
+    if (removed.length === 0 && added.length === 0) {
+      return { changed: false, removed: [] };
+    }
+    if (removed.includes(Role.ADMIN) && this.props.id === actingAdminId) {
+      throw new CannotRemoveOwnAdminError();
+    }
+    return { changed: true, removed };
+  }
+
+  /**
    * Replaces the user's roles on behalf of an admin. Rules, in order:
    *
    * 1. `roles` must be a non-empty list of distinct known roles.
@@ -327,23 +361,11 @@ export class User {
    * @throws CannotRemoveOwnAdminError When the admin removes `ADMIN` from themselves.
    */
   changeRoles(roles: readonly Role[], actingAdminId: string, at: Date): RoleChangeResult {
-    const known: readonly string[] = Object.values(Role);
-    if (
-      roles.length === 0 ||
-      new Set(roles).size !== roles.length ||
-      roles.some((role) => !known.includes(role))
-    ) {
-      throw new UserValidationError('roles must be a non-empty list of distinct CUSTOMER or ADMIN');
-    }
-    const current = this.props.roles;
-    const removed = current.filter((role) => !roles.includes(role));
-    const added = roles.filter((role) => !current.includes(role));
-    if (removed.length === 0 && added.length === 0) {
+    const { changed, removed } = this.previewRoleChange(roles, actingAdminId);
+    if (!changed) {
       return { changed: false, removed: [], customerCreated: false };
     }
-    if (removed.includes(Role.ADMIN) && this.props.id === actingAdminId) {
-      throw new CannotRemoveOwnAdminError();
-    }
+    const added = roles.filter((role) => !this.props.roles.includes(role));
 
     let customerCreated = false;
     if (added.includes(Role.CUSTOMER) && this.props.customerId === null) {

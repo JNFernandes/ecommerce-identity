@@ -307,6 +307,24 @@ export class User {
   }
 
   /**
+   * Replaces the password hash on the user's own request. Returns a new `User`; this instance is
+   * left untouched. Roles, status, `customerId` and `lastLoginAt` are kept. The caller has already
+   * verified the current password and applied `PasswordPolicy` (and the "differs from current"
+   * check, which needs the hasher) to the new one.
+   *
+   * @param newHash The argon2id hash of the new password.
+   * @param at The change time, written to `updatedAt`.
+   * @returns The user with the new hash.
+   * @throws InvalidCredentialsError When the user may not log in (see {@link User.canLogin}).
+   */
+  changePassword(newHash: string, at: Date): User {
+    if (!this.canLogin()) {
+      throw new InvalidCredentialsError();
+    }
+    return User.restore({ ...this.props, passwordHash: newHash, updatedAt: at });
+  }
+
+  /**
    * Checks rules 1 to 3 of {@link User.changeRoles} without changing anything, so callers can apply
    * other checks (such as `LastActiveAdminPolicy`) after it and before the change.
    *

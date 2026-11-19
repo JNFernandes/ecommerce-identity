@@ -71,7 +71,7 @@ No setup tasks: no package or configuration changes (plan "Technical Context").
 
 **Independent test**: `POST /users` roles `["CUSTOMER"]` → 201 with `customerId` → exactly one message, registration payload; with Kafka down → 201 + `PENDING_RETRY` dead-letter row.
 
-- [ ] T011 [US2] Component test `tests/component/users-create-customer.component.spec.ts` (PostgreSQL + Kafka): admin creates `["CUSTOMER"]` → 201 with `customerId` ≠ `id`; exactly one message on `identity.user-registered`, key = user id, value keys exactly `eventId`, `aggregateId`, `occurredAt`, `version`, `customerId`, `email`, `name` with the stored values; the customer logs in → token has `customerId`. Commit `test(US-09): cover creating a customer with its event`.
+- [X] T011 [US2] Component test `tests/component/users-create-customer.component.spec.ts` (PostgreSQL + Kafka): admin creates `["CUSTOMER"]` → 201 with `customerId` ≠ `id`; exactly one message on `identity.user-registered`, key = user id, value keys exactly `eventId`, `aggregateId`, `occurredAt`, `version`, `customerId`, `email`, `name` with the stored values; the customer logs in → token has `customerId`. Commit `test(US-09): cover creating a customer with its event`.
 - [ ] T012 [US2] Component test `tests/component/users-create-kafka-unavailable.component.spec.ts` (PostgreSQL only, `useUnreachableKafka()`): `["CUSTOMER"]` → 201, user stored, one `PENDING_RETRY` dead-letter row whose `eventId` equals the payload's `eventId` and whose key is the user id; `["ADMIN"]` → 201 and no dead-letter row; audit rows exist for both. Commit `test(US-09): creation works with Kafka down`.
 
 ---

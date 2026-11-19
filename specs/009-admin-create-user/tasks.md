@@ -102,7 +102,7 @@ No setup tasks: no package or configuration changes (plan "Technical Context").
 
 **Independent test**: read `audit_records` after creations; capture logs; atomicity covered by T005.
 
-- [ ] T015 [US5] Component test `tests/component/users-create-audit.component.spec.ts` (PostgreSQL, Kafka unreachable, `CapturingLogger`): after creating one admin and one customer, `audit_records` has exactly two rows with the seeded admin's id as `actorId`, `action` `USER_CREATED`, the new ids as `targetId`, `before` null, `after` `{"roles":["ADMIN"]}` / `{"roles":["CUSTOMER"]}`, `occurredAt` within the request time; `UPDATE` / `DELETE` on them fail; captured logs contain one `user created: actorId=… targetId=… roles=…` line per creation and never the passwords, the emails, the names, a hash (`$argon2id$`) or the access token; no response body contains `password` or `passwordHash`. Commit `test(US-09): audit user creation without secrets`.
+- [X] T015 [US5] Component test `tests/component/users-create-audit.component.spec.ts` (PostgreSQL, Kafka unreachable, `CapturingLogger`): after creating one admin and one customer, `audit_records` has exactly two rows with the seeded admin's id as `actorId`, `action` `USER_CREATED`, the new ids as `targetId`, `before` null, `after` `{"roles":["ADMIN"]}` / `{"roles":["CUSTOMER"]}`, `occurredAt` within the request time; `UPDATE` / `DELETE` on them fail; captured logs contain one `user created: actorId=… targetId=… roles=…` line per creation and never the passwords, the emails, the names, a hash (`$argon2id$`) or the access token; no response body contains `password` or `passwordHash`. Commit `test(US-09): audit user creation without secrets`.
 
 **Checkpoint**: all stories done.
 

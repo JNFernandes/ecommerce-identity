@@ -145,9 +145,14 @@ describe('User', () => {
       ['both roles, admin first', [Role.ADMIN, Role.CUSTOMER]],
       ['a repeated role', [Role.ADMIN, Role.ADMIN]],
     ])('should reject %s', (_label, roles) => {
-      expect(() => User.createByAdmin(email, name, HASH, roles)).toThrow(
-        new UserValidationError('roles must be exactly one of CUSTOMER or ADMIN'),
-      );
+      const error = new UserValidationError('roles must be exactly one of CUSTOMER or ADMIN');
+      expect(() => User.createByAdmin(email, name, HASH, roles)).toThrow(error);
+      expect(() => User.assertRolesForAdminCreation(roles)).toThrow(error);
+    });
+
+    it('should return the single role when the roles are valid', () => {
+      expect(User.assertRolesForAdminCreation([Role.ADMIN])).toBe(Role.ADMIN);
+      expect(User.assertRolesForAdminCreation([Role.CUSTOMER])).toBe(Role.CUSTOMER);
     });
   });
 

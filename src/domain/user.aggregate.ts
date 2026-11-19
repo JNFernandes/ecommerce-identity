@@ -109,11 +109,23 @@ export class User {
     passwordHash: string,
     roles: readonly Role[],
   ): User {
-    if (roles.length === 1 && roles[0] === Role.CUSTOMER) {
-      return User.registerCustomer(email, name, passwordHash);
-    }
-    if (roles.length === 1 && roles[0] === Role.ADMIN) {
-      return User.newAdmin(email, name, passwordHash);
+    const role = User.assertRolesForAdminCreation(roles);
+    return role === Role.CUSTOMER
+      ? User.registerCustomer(email, name, passwordHash)
+      : User.newAdmin(email, name, passwordHash);
+  }
+
+  /**
+   * Checks the one-role-per-user rule of {@link User.createByAdmin} on its own, so a caller can
+   * reject bad roles before paying for anything else (e.g. password hashing).
+   *
+   * @param roles The requested roles.
+   * @returns The single role.
+   * @throws UserValidationError When `roles` is not exactly `[CUSTOMER]` or `[ADMIN]`.
+   */
+  static assertRolesForAdminCreation(roles: readonly Role[]): Role {
+    if (roles.length === 1 && (roles[0] === Role.CUSTOMER || roles[0] === Role.ADMIN)) {
+      return roles[0];
     }
     throw new UserValidationError('roles must be exactly one of CUSTOMER or ADMIN');
   }

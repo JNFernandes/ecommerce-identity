@@ -53,6 +53,7 @@ import { UserEventsProducer } from './infra/kafka/user-events.producer';
 import { DEFAULT_JWKS_CACHE_SECONDS, JwksService } from './services/jwks.service';
 import { AdminSeedService } from './services/admin-seed.service';
 import { ChangeUserStatusService } from './services/change-user-status.service';
+import { CreateUserService } from './services/create-user.service';
 import { RetryOutboundEventsService } from './services/retry-outbound-events.service';
 import { UserEventDispatcher } from './services/user-event-dispatcher';
 import { DeadLetterRetryWorker } from './infra/outbound/dead-letter-retry.worker';
@@ -216,6 +217,7 @@ function createJwksService(publicKeySet: PublicKeySet, configService: ConfigServ
     ListUsersService,
     GetUserService,
     ChangeUserStatusService,
+    CreateUserService,
     RetryOutboundEventsService,
     DeadLetterRetryWorker,
   ],

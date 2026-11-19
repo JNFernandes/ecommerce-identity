@@ -22,9 +22,18 @@ are in `ecommerce-infra/docs/events.md`, which is the source of truth.
 | Role | How it is created | `customerId` |
 |---|---|---|
 | `CUSTOMER` | Public registration (`POST /auth/register`) | New, generated at registration |
-| `ADMIN` | Only by the startup seed from `ADMIN_EMAIL` / `ADMIN_PASSWORD` when no admin exists ([Admin seed](#admin-seed)) | None |
+| `ADMIN` | The startup seed from `ADMIN_EMAIL` / `ADMIN_PASSWORD` when no admin exists ([Admin seed](#admin-seed)), or an `ADMIN` through `POST /users` (planned) | None |
 
-No endpoint can change a user's role ([ADR 0003](docs/adr/0003-admin-seed-and-no-role-change.md)).
+Roles change only through `PUT /users/{id}/roles`, called by an `ADMIN` (planned); never
+self-service. A user cannot remove their own `ADMIN` role, and the last `ACTIVE` admin can never
+lose `ADMIN` or be disabled. Every user creation by an admin, role change and status change is
+recorded in an append-only audit trail readable by admins through `GET /audit` (planned)
+([ADR 0008](docs/adr/0008-admin-creation-and-role-changes-through-the-api.md), which supersedes
+[ADR 0003](docs/adr/0003-admin-seed-and-no-role-change.md)).
+
+> **Admin-created users.** A user created through `POST /users` gets the password the admin
+> supplies, so the admin knows it. That user should change it with `POST /users/me/password`
+> right after the first login.
 
 ## Endpoints
 
@@ -40,7 +49,11 @@ No endpoint can change a user's role ([ADR 0003](docs/adr/0003-admin-seed-and-no
 | `GET /users/me` | `CUSTOMER`, `ADMIN` | implemented |
 | `GET /users` | `ADMIN` | implemented |
 | `GET /users/{id}` | `ADMIN` | implemented |
-| `PATCH /users/{id}/status` | `ADMIN` | implemented |
+| `PATCH /users/{id}/status` | `ADMIN` | implemented (audit record: planned) |
+| `POST /users/me/password` | `CUSTOMER`, `ADMIN` | planned |
+| `POST /users` | `ADMIN` | planned |
+| `PUT /users/{id}/roles` | `ADMIN` | planned |
+| `GET /audit` | `ADMIN` | planned |
 
 `GET /users/me` returns the caller's account as stored now:
 `{ "id", "customerId", "email", "name", "roles", "status", "createdAt" }`. `customerId` is left out
@@ -209,8 +222,9 @@ Implemented and tested by `tests/support/reference-verifier.ts`
 
 ## Admin seed
 
-Admins are never created through the API. At startup, after migrations and before the server
-accepts requests, the service creates the first administrator from three variables:
+The seed creates the **first** administrator; later admins are created by an admin through
+`POST /users` (planned). At startup, after migrations and before the server accepts requests, the
+service creates the first administrator from three variables:
 
 | Variable | Rule |
 |---|---|

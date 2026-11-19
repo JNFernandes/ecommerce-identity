@@ -18,8 +18,9 @@ requires (Documentation Standards).
 |---|---|---|
 | [0001](0001-rs256-access-tokens-with-jwks.md) | RS256 access tokens with a JWKS endpoint instead of a shared HS256 secret | Accepted |
 | [0002](0002-refresh-token-rotation-with-reuse-detection.md) | Refresh token rotation with reuse detection (opaque tokens stored hashed) | Accepted |
-| [0003](0003-admin-seed-and-no-role-change.md) | Admins only from a startup seed; no role-change endpoint | Accepted |
+| [0003](0003-admin-seed-and-no-role-change.md) | Admins only from a startup seed; no role-change endpoint | Superseded by [0008](0008-admin-creation-and-role-changes-through-the-api.md) |
 | [0004](0004-user-registered-event-choreography.md) | Registration publishes `identity.user-registered`; Orders creates the customer | Accepted |
 | [0005](0005-default-deny-route-guards.md) | Default-deny route guards with local access token verification | Accepted |
 | [0006](0006-status-changes-serialized-and-sessions-revoked.md) | Status changes are serialized; disabling revokes sessions; access tokens expire naturally | Accepted |
 | [0007](0007-outbound-retry-per-row-skip-locked.md) | Outbound retry claims one row per transaction with SKIP LOCKED | Accepted |
+| [0008](0008-admin-creation-and-role-changes-through-the-api.md) | Admins create users and change roles through the API, with audit | Accepted |

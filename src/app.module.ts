@@ -22,6 +22,7 @@ import { JwtAuthGuard } from './controllers/auth/jwt-auth.guard';
 import { RolesGuard } from './controllers/auth/roles.guard';
 import { RoutePolicyCheck } from './controllers/auth/route-policy.check';
 import { AuthController, REGISTER_THROTTLER } from './controllers/auth.controller';
+import { AuditController } from './controllers/audit.controller';
 import { HealthController } from './controllers/health.controller';
 import { JwksController } from './controllers/jwks.controller';
 import { UsersController } from './controllers/users.controller';
@@ -35,6 +36,7 @@ import {
 import { HealthService } from './services/health.service';
 import { OutboundDeadLetterRepository } from './repositories/outbound-dead-letter.repository';
 import { RefreshTokenRepository } from './repositories/refresh-token.repository';
+import { AuditRecordRepository } from './repositories/audit-record.repository';
 import { UserRepository } from './repositories/user.repository';
 import { Argon2PasswordHasher } from './infra/security/argon2-password-hasher';
 import { CryptoRefreshTokenGenerator } from './infra/security/crypto-refresh-token-generator';
@@ -59,6 +61,7 @@ import { RetryOutboundEventsService } from './services/retry-outbound-events.ser
 import { UserEventDispatcher } from './services/user-event-dispatcher';
 import { DeadLetterRetryWorker } from './infra/outbound/dead-letter-retry.worker';
 import { GetUserService } from './services/get-user.service';
+import { ListAuditRecordsService } from './services/list-audit-records.service';
 import { ListUsersService } from './services/list-users.service';
 import { GetCurrentUserService } from './services/get-current-user.service';
 import { LoginService } from './services/login.service';
@@ -169,12 +172,13 @@ function createJwksService(publicKeySet: PublicKeySet, configService: ConfigServ
     CqrsModule,
     DiscoveryModule,
   ],
-  controllers: [HealthController, AuthController, JwksController, UsersController],
+  controllers: [HealthController, AuthController, JwksController, UsersController, AuditController],
   providers: [
     HealthService,
     UserRepository,
     OutboundDeadLetterRepository,
     RefreshTokenRepository,
+    AuditRecordRepository,
     { provide: PasswordHasher, useClass: Argon2PasswordHasher },
     {
       provide: KeyRing,
@@ -216,6 +220,7 @@ function createJwksService(publicKeySet: PublicKeySet, configService: ConfigServ
     GetCurrentUserService,
     AdminSeedService,
     ListUsersService,
+    ListAuditRecordsService,
     GetUserService,
     ChangeUserStatusService,
     ChangeUserRolesService,

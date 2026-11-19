@@ -6,7 +6,10 @@ jest.setTimeout(180_000);
 
 const MIGRATION = 'AddUserListIndexes20261118120000';
 /** Later migrations, undone first so this one can be reverted. */
-const LATER_MIGRATIONS = ['CreateAuditRecords20261119120000'];
+const LATER_MIGRATIONS = [
+  'CreateAuditRecords20261119120000',
+  'AddAuditRecordIndexes20261119130000',
+];
 
 /** Definitions of the US-06 indexes on `users`, keyed by name. */
 async function listIndexes(dataSource: DataSource): Promise<Record<string, string>> {

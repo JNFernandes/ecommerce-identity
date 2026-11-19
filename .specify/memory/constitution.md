@@ -1,6 +1,19 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+Version change:    1.1.1 → 1.1.2 (2026-11-19)
+Bump rationale:    PATCH: the 1.1.0 migration note on US-07 is resolved; no rule changes.
+
+Resolved migration notes:
+  ✅ `PATCH /users/{id}/status` (US-07) writes a `USER_STATUS_CHANGED` record in the same
+    transaction (fix/US-07); verified end-to-end with `GET /audit` (US-11).
+
+Runtime guidance:
+  ✅ README.md — `GET /audit`, audited actions and the append-only trigger documented.
+
+=============================================================================================
+Previous report (1.1.1)
+=============================================================================================
 Version change:    1.1.0 → 1.1.1 (2026-11-19)
 Bump rationale:    PATCH: clarifies Principle III for users holding both roles (US-10); no rule is
                    added or removed.
@@ -68,8 +81,8 @@ Runtime guidance:
     `POST /users` story lands, update it there.
 
 Migration note (existing code that must change):
-  ⚠ `PATCH /users/{id}/status` (US-07) writes no audit record; it violates XI until a follow-up
-    story adds one in the same transaction.
+  ✅ RESOLVED in 1.1.2 (US-11): `PATCH /users/{id}/status` (US-07) now writes its audit record
+    in the same transaction.
 
 Deferred TODOs (to settle in the specs of the stories that implement them):
   - TODO(ADMIN_CREATED_CUSTOMER): whether `POST /users` may create a `CUSTOMER` and, if so, that it
@@ -520,4 +533,4 @@ This constitution supersedes all other project conventions and style guides. Whe
 
 **Compliance**: Every PR review MUST verify that no constitutional principle is violated. Reviewers are empowered to block merges for violations without exception. New principles take effect immediately upon merge.
 
-**Version**: 1.1.1 | **Ratified**: 2026-11-17 | **Last Amended**: 2026-11-19
+**Version**: 1.1.2 | **Ratified**: 2026-11-17 | **Last Amended**: 2026-11-19

@@ -10,7 +10,7 @@ import { LastActiveAdminPolicy } from '../domain/last-active-admin-policy';
 import { User } from '../domain/user.aggregate';
 import { UserStatus } from '../domain/user-status.enum';
 import { toUserSummary, UserSummaryReadModel } from '../queries/user-summary.read-model';
-import { UserRepository, UserStatusTx } from '../repositories/user.repository';
+import { UserRepository, AdminTx } from '../repositories/user.repository';
 import { Clock } from './ports/clock';
 
 /** What the status change transaction committed. */
@@ -29,7 +29,7 @@ interface StatusChangeOutcome {
  * Handles `ChangeUserStatusCommand` (`PATCH /users/{id}/status`, admins only). Orchestration only:
  * the rules live in `User` and `LastActiveAdminPolicy`.
  *
- * Everything runs in one transaction, in the lock order of `UserStatusTx`: the status-change
+ * Everything runs in one transaction, in the lock order of `AdminTx`: the status-change
  * advisory lock, then the acting admin is re-read (they may have been disabled since their token
  * was issued), then the target row is locked. A disable writes the status and revokes every refresh
  * token of the user in the same transaction; an enable writes only the status. Setting the status a
@@ -64,7 +64,7 @@ export class ChangeUserStatusService implements ICommandHandler<
    */
   async execute(command: ChangeUserStatusCommand): Promise<UserSummaryReadModel> {
     const now = this.clock.now();
-    const outcome = await this.users.inStatusTransaction((tx) => this.attempt(tx, command, now));
+    const outcome = await this.users.inAdminTransaction((tx) => this.attempt(tx, command, now));
 
     if (outcome.changed) {
       this.logger.log(
@@ -77,11 +77,11 @@ export class ChangeUserStatusService implements ICommandHandler<
 
   /** The status change transaction: lock, re-check the actor, lock the target, apply, persist. */
   private async attempt(
-    tx: UserStatusTx,
+    tx: AdminTx,
     command: ChangeUserStatusCommand,
     now: Date,
   ): Promise<StatusChangeOutcome> {
-    await tx.lockStatusChanges();
+    await tx.lockAdminChanges();
     const actor = await tx.findById(command.actingAdminId);
     if (actor === null || !actor.isActiveAdmin()) {
       throw new InvalidAccessTokenError(AccessTokenFailureReason.USER_UNAVAILABLE);

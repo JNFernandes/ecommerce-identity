@@ -14,26 +14,26 @@ import { UserPageReadModel, UserSummaryReadModel } from '../queries/user-summary
 import { isUniqueViolation } from './errors/is-unique-violation';
 
 /**
- * Key of the transaction-scoped advisory lock that serializes every user status change, as the two
- * 32-bit integers of `pg_advisory_xact_lock(int, int)`. That key space never overlaps the 64-bit
- * keys of the refresh token family locks.
+ * Key of the transaction-scoped advisory lock that serializes every admin mutation (status
+ * changes, user creation), as the two 32-bit integers of `pg_advisory_xact_lock(int, int)`. That
+ * key space never overlaps the 64-bit keys of the refresh token family locks.
  */
-export const USER_STATUS_LOCK_KEY: readonly [number, number] = [0x1d_57a7, 1];
+export const ADMIN_CHANGES_LOCK_KEY: readonly [number, number] = [0x1d_57a7, 1];
 
 /**
- * Persistence operations available inside one status change transaction (see
- * {@link UserRepository.inStatusTransaction}).
+ * Persistence operations available inside one admin transaction (see
+ * {@link UserRepository.inAdminTransaction}).
  *
- * Lock order: always `lockStatusChanges` → `findById` (acting admin, no lock) →
+ * Lock order: always `lockAdminChanges` → `findById` (acting admin, no lock) →
  * `findByIdForUpdate` (target row) → writes. The advisory lock is taken before any row lock, so
- * two status changes never wait on each other's rows and cannot deadlock.
+ * two admin mutations never wait on each other's rows and cannot deadlock.
  */
-export interface UserStatusTx {
+export interface AdminTx {
   /**
-   * Takes the transaction-scoped advisory lock that serializes every status change. Released on
+   * Takes the transaction-scoped advisory lock that serializes every admin mutation. Released on
    * commit or rollback.
    */
-  lockStatusChanges(): Promise<void>;
+  lockAdminChanges(): Promise<void>;
 
   /**
    * Reads a user without locking it.
@@ -72,13 +72,13 @@ export interface UserStatusTx {
   revokeAllRefreshTokens(userId: string, at: Date): Promise<number>;
 }
 
-/** {@link UserStatusTx} bound to one TypeORM transaction manager. */
-class EntityManagerUserStatusTx implements UserStatusTx {
+/** {@link AdminTx} bound to one TypeORM transaction manager. */
+class EntityManagerAdminTx implements AdminTx {
   constructor(private readonly manager: EntityManager) {}
 
-  async lockStatusChanges(): Promise<void> {
+  async lockAdminChanges(): Promise<void> {
     await this.manager.query('SELECT pg_advisory_xact_lock($1::int, $2::int)', [
-      ...USER_STATUS_LOCK_KEY,
+      ...ADMIN_CHANGES_LOCK_KEY,
     ]);
   }
 
@@ -192,15 +192,15 @@ export class UserRepository {
 
   /**
    * Runs `work` in one database transaction (READ COMMITTED). Everything `work` does through the
-   * given {@link UserStatusTx} commits when it resolves and rolls back when it rejects. Callers
-   * take the locks in the order documented on {@link UserStatusTx}.
+   * given {@link AdminTx} commits when it resolves and rolls back when it rejects. Callers
+   * take the locks in the order documented on {@link AdminTx}.
    *
    * @param work The unit of work; its result is returned after the commit.
    * @returns What `work` resolved to.
    */
-  async inStatusTransaction<T>(work: (tx: UserStatusTx) => Promise<T>): Promise<T> {
+  async inAdminTransaction<T>(work: (tx: AdminTx) => Promise<T>): Promise<T> {
     return this.repository.manager.transaction((manager) =>
-      work(new EntityManagerUserStatusTx(manager)),
+      work(new EntityManagerAdminTx(manager)),
     );
   }
 

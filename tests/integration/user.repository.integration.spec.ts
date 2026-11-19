@@ -409,7 +409,7 @@ describe('UserRepository (integration)', () => {
     });
   });
 
-  describe('inStatusTransaction', () => {
+  describe('inAdminTransaction', () => {
     const NOW = new Date('2026-11-18T12:00:00.000Z');
     let tokens: RefreshTokenRepository;
 
@@ -451,7 +451,7 @@ describe('UserRepository (integration)', () => {
       const user = customer('for-update@example.com');
       await repository.save(user);
 
-      const [found, missing] = await repository.inStatusTransaction(async (tx) => [
+      const [found, missing] = await repository.inAdminTransaction(async (tx) => [
         await tx.findByIdForUpdate(user.id),
         await tx.findByIdForUpdate('00000000-0000-4000-8000-0000000000aa'),
       ]);
@@ -467,7 +467,7 @@ describe('UserRepository (integration)', () => {
       const user = customer('find-tx@example.com');
       await repository.save(user);
 
-      const found = await repository.inStatusTransaction((tx) => tx.findById(user.id));
+      const found = await repository.inAdminTransaction((tx) => tx.findById(user.id));
 
       expect(found?.id).toBe(user.id);
     });
@@ -478,7 +478,7 @@ describe('UserRepository (integration)', () => {
       await repository.save(admin('a3@example.com', UserStatus.DISABLED));
       await repository.save(customer('c1@example.com'));
 
-      await expect(repository.inStatusTransaction((tx) => tx.countActiveAdmins())).resolves.toBe(2);
+      await expect(repository.inAdminTransaction((tx) => tx.countActiveAdmins())).resolves.toBe(2);
     });
 
     it('should write only status and updatedAt in saveStatus', async () => {
@@ -503,7 +503,7 @@ describe('UserRepository (integration)', () => {
         lastLoginAt: null,
       });
 
-      await repository.inStatusTransaction((tx) => tx.saveStatus(changed));
+      await repository.inAdminTransaction((tx) => tx.saveStatus(changed));
       const after = await repository.findById(user.id);
 
       expect(after?.status).toBe(UserStatus.DISABLED);
@@ -532,7 +532,7 @@ describe('UserRepository (integration)', () => {
       );
       const othersToken = await login(other, new Date('2026-11-18T09:03:00.000Z'));
 
-      const revoked = await repository.inStatusTransaction((tx) =>
+      const revoked = await repository.inAdminTransaction((tx) =>
         tx.revokeAllRefreshTokens(user.id, NOW),
       );
       const rows = await tokenRows(user.id);
@@ -555,7 +555,7 @@ describe('UserRepository (integration)', () => {
       await login(user, new Date('2026-11-18T09:00:00.000Z'));
 
       await expect(
-        repository.inStatusTransaction(async (tx) => {
+        repository.inAdminTransaction(async (tx) => {
           await tx.saveStatus(withStatus(user, UserStatus.DISABLED, NOW));
           await tx.revokeAllRefreshTokens(user.id, NOW);
           throw new Error('boom');
@@ -566,19 +566,19 @@ describe('UserRepository (integration)', () => {
       expect([...(await tokenRows(user.id)).values()].map((row) => row.revokedAt)).toEqual([null]);
     });
 
-    it('should make a second lockStatusChanges wait until the first transaction commits', async () => {
+    it('should make a second lockAdminChanges wait until the first transaction commits', async () => {
       const order: string[] = [];
 
       await Promise.all([
-        repository.inStatusTransaction(async (tx) => {
-          await tx.lockStatusChanges();
+        repository.inAdminTransaction(async (tx) => {
+          await tx.lockAdminChanges();
           order.push('first locked');
           await pause(300);
           order.push('first done');
         }),
         pause(50).then(() =>
-          repository.inStatusTransaction(async (tx) => {
-            await tx.lockStatusChanges();
+          repository.inAdminTransaction(async (tx) => {
+            await tx.lockAdminChanges();
             order.push('second locked');
           }),
         ),

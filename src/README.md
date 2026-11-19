@@ -169,12 +169,12 @@ Controller → Service → Domain → Repository (Constitution Principle I).
 - Domain: `User.assertCanBeDisabledBy` (self rule), `disable`, `enable` (return whether the status
   changed; a no-op writes and logs nothing) and `isActiveAdmin`; `domain/last-active-admin-policy.ts`
   (`LastActiveAdminPolicy.assertCanDisable`).
-- `repositories/user.repository.ts` — `inStatusTransaction(work)` hands the work a `UserStatusTx`
-  (`lockStatusChanges`, `findById`, `findByIdForUpdate`, `countActiveAdmins`, `saveStatus` writing
+- `repositories/user.repository.ts` — `inAdminTransaction(work)` hands the work an `AdminTx`
+  (`lockAdminChanges`, `findById`, `findByIdForUpdate`, `countActiveAdmins`, `saveStatus` writing
   only `status` / `updatedAt`, `revokeAllRefreshTokens`). `queries/user-summary.read-model.ts` gains
   `toUserSummary(user)`, so the response matches `GET /users/{id}`.
 - **Status change flow** (one transaction, in this lock order):
-  `pg_advisory_xact_lock(USER_STATUS_LOCK_KEY)` → acting admin re-read (`ACTIVE` admin or `401`) →
+  `pg_advisory_xact_lock(ADMIN_CHANGES_LOCK_KEY)` → acting admin re-read (`ACTIVE` admin or `401`) →
   target `SELECT … FOR UPDATE` (`404`) → `assertCanBeDisabledBy` → for an `ACTIVE` admin target,
   `countActiveAdmins` + `LastActiveAdminPolicy` → `disable` / `enable` → `saveStatus` → (disable)
   `revokeAllRefreshTokens`. The log line `user status changed: actorId targetId from to

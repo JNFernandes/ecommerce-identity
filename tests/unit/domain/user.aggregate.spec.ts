@@ -1,6 +1,7 @@
 import { Email } from '../../../src/domain/email.value-object';
 import { CannotDisableSelfError } from '../../../src/domain/errors/cannot-disable-self.error';
 import { InvalidCredentialsError } from '../../../src/domain/errors/invalid-credentials.error';
+import { UserValidationError } from '../../../src/domain/errors/user-validation.error';
 import { UserRegistered } from '../../../src/domain/events/user-registered.event';
 import { Role } from '../../../src/domain/role.enum';
 import { User } from '../../../src/domain/user.aggregate';
@@ -103,6 +104,49 @@ describe('User', () => {
     it('should give every admin a new id', () => {
       expect(User.registerAdmin(email, name, HASH).id).not.toBe(
         User.registerAdmin(email, name, HASH).id,
+      );
+    });
+  });
+
+  describe('createByAdmin', () => {
+    it('should create a customer like registration for exactly [CUSTOMER]', () => {
+      const user = User.createByAdmin(email, name, HASH, [Role.CUSTOMER]);
+
+      expect(user.roles).toEqual([Role.CUSTOMER]);
+      expect(user.status).toBe(UserStatus.ACTIVE);
+      expect(user.customerId).toMatch(UUID);
+      expect(user.customerId).not.toBe(user.id);
+      expect(user.passwordHash).toBe(HASH);
+      expect(user.lastLoginAt).toBeNull();
+      const events = user.pullDomainEvents();
+      expect(events).toHaveLength(1);
+      expect(events[0]).toBeInstanceOf(UserRegistered);
+      expect(events[0]).toMatchObject({
+        aggregateId: user.id,
+        customerId: user.customerId,
+        email: 'ana@example.com',
+        name: 'Ana Silva',
+      });
+    });
+
+    it('should create an admin without customerId and without event for exactly [ADMIN]', () => {
+      const user = User.createByAdmin(email, name, HASH, [Role.ADMIN]);
+
+      expect(user.roles).toEqual([Role.ADMIN]);
+      expect(user.status).toBe(UserStatus.ACTIVE);
+      expect(user.customerId).toBeNull();
+      expect(user.id).toMatch(UUID);
+      expect(user.pullDomainEvents()).toEqual([]);
+    });
+
+    it.each([
+      ['no role', []],
+      ['both roles', [Role.CUSTOMER, Role.ADMIN]],
+      ['both roles, admin first', [Role.ADMIN, Role.CUSTOMER]],
+      ['a repeated role', [Role.ADMIN, Role.ADMIN]],
+    ])('should reject %s', (_label, roles) => {
+      expect(() => User.createByAdmin(email, name, HASH, roles)).toThrow(
+        new UserValidationError('roles must be exactly one of CUSTOMER or ADMIN'),
       );
     });
   });

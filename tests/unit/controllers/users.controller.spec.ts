@@ -1,14 +1,18 @@
-import { ConflictException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { CommandBus, QueryBus } from '@nestjs/cqrs';
 import { UsersController } from '../../../src/controllers/users.controller';
 import { ChangeUserStatusCommand } from '../../../src/commands/change-user-status.command';
+import { CreateUserCommand } from '../../../src/commands/create-user.command';
 import { AuthenticatedPrincipal } from '../../../src/domain/authenticated-principal';
 import { CannotDisableSelfError } from '../../../src/domain/errors/cannot-disable-self.error';
+import { DuplicateEmailError } from '../../../src/domain/errors/duplicate-email.error';
 import { LastActiveAdminError } from '../../../src/domain/errors/last-active-admin.error';
 import { UserNotFoundError } from '../../../src/domain/errors/user-not-found.error';
+import { UserValidationError } from '../../../src/domain/errors/user-validation.error';
 import { Role } from '../../../src/domain/role.enum';
 import { UserStatus } from '../../../src/domain/user-status.enum';
 import { ChangeUserStatusDto } from '../../../src/dto/change-user-status.dto';
+import { CreateUserDto } from '../../../src/dto/create-user.dto';
 import { CurrentUserResponseDto } from '../../../src/dto/current-user-response.dto';
 import { ListUsersQueryDto } from '../../../src/dto/list-users-query.dto';
 import { UserPageResponseDto } from '../../../src/dto/user-page-response.dto';
@@ -217,6 +221,69 @@ describe('UsersController', () => {
       await expect(
         controllerWith(execute).changeStatus(USER_ID, dto(UserStatus.DISABLED), admin),
       ).rejects.toBe(failure);
+    });
+  });
+  describe('create', () => {
+    const admin = AuthenticatedPrincipal.fromClaims({ sub: USER_ID, roles: ['ADMIN'] });
+    const created: UserSummaryReadModel = {
+      id: '7a2d3b0f-9e54-4c1a-8b8f-3d6e2f4a5b6c',
+      customerId: null,
+      email: 'bea@example.com',
+      name: 'Bea',
+      roles: [Role.ADMIN],
+      status: UserStatus.ACTIVE,
+      createdAt: new Date('2026-11-19T10:00:00.000Z'),
+      lastLoginAt: null,
+    };
+
+    function body(): CreateUserDto {
+      return Object.assign(new CreateUserDto(), {
+        email: 'bea@example.com',
+        name: 'Bea',
+        password: 'correct-horse-battery',
+        roles: [Role.ADMIN],
+      });
+    }
+
+    function controllerWith(execute: jest.Mock): UsersController {
+      return new UsersController({} as QueryBus, { execute } as unknown as CommandBus);
+    }
+
+    it('should dispatch CreateUserCommand built from the principal and the body', async () => {
+      const execute = jest.fn().mockResolvedValue(created);
+
+      const response = await controllerWith(execute).create(body(), admin);
+
+      expect(execute).toHaveBeenCalledWith(
+        new CreateUserCommand(USER_ID, 'bea@example.com', 'Bea', 'correct-horse-battery', [
+          Role.ADMIN,
+        ]),
+      );
+      expect(response).toBeInstanceOf(UserSummaryResponseDto);
+      expect(response).toEqual(UserSummaryResponseDto.from(created));
+    });
+
+    it('should map a rule violation to 400 with its message', async () => {
+      const execute = jest.fn().mockRejectedValue(new UserValidationError('name is required'));
+
+      await expect(controllerWith(execute).create(body(), admin)).rejects.toEqual(
+        new BadRequestException('name is required'),
+      );
+    });
+
+    it('should map a duplicate email to 409', async () => {
+      const execute = jest.fn().mockRejectedValue(new DuplicateEmailError());
+
+      await expect(controllerWith(execute).create(body(), admin)).rejects.toEqual(
+        new ConflictException('email already registered'),
+      );
+    });
+
+    it('should rethrow any other error unchanged', async () => {
+      const failure = new Error('boom');
+      const execute = jest.fn().mockRejectedValue(failure);
+
+      await expect(controllerWith(execute).create(body(), admin)).rejects.toBe(failure);
     });
   });
 });

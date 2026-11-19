@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   ConflictException,
   Controller,
@@ -8,12 +9,14 @@ import {
   Param,
   ParseUUIDPipe,
   Patch,
+  Post,
   Query,
 } from '@nestjs/common';
 import { CommandBus, QueryBus } from '@nestjs/cqrs';
 import {
   ApiBadRequestResponse,
   ApiConflictResponse,
+  ApiCreatedResponse,
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
@@ -21,12 +24,16 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { ChangeUserStatusCommand } from '../commands/change-user-status.command';
+import { CreateUserCommand } from '../commands/create-user.command';
 import { AuthenticatedPrincipal } from '../domain/authenticated-principal';
 import { CannotDisableSelfError } from '../domain/errors/cannot-disable-self.error';
+import { DuplicateEmailError } from '../domain/errors/duplicate-email.error';
 import { LastActiveAdminError } from '../domain/errors/last-active-admin.error';
 import { UserNotFoundError } from '../domain/errors/user-not-found.error';
+import { UserValidationError } from '../domain/errors/user-validation.error';
 import { Role } from '../domain/role.enum';
 import { ChangeUserStatusDto } from '../dto/change-user-status.dto';
+import { CreateUserDto } from '../dto/create-user.dto';
 import { CurrentUserResponseDto } from '../dto/current-user-response.dto';
 import { ListUsersQueryDto } from '../dto/list-users-query.dto';
 import { UserPageResponseDto } from '../dto/user-page-response.dto';
@@ -45,7 +52,7 @@ import { Roles } from './auth/roles.decorator';
 export class UsersController {
   /**
    * @param queryBus Dispatches the read queries.
-   * @param commandBus Dispatches the status change command.
+   * @param commandBus Dispatches the status change and user creation commands.
    */
   constructor(
     private readonly queryBus: QueryBus,
@@ -180,6 +187,57 @@ export class UsersController {
       }
       if (error instanceof CannotDisableSelfError || error instanceof LastActiveAdminError) {
         throw new ConflictException(error.message);
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Creates a user with one role for admins. The admin chooses the initial password, which the user
+   * should change after the first login. A customer gets a new `customerId` and
+   * `identity.user-registered` is published after the commit; an admin gets neither. The creation
+   * is audited in the same transaction.
+   *
+   * @param dto The new user's email, name, initial password and role, already shape-validated.
+   * @param principal The acting admin.
+   * @throws BadRequestException When the email, name, password or roles break a rule.
+   * @throws ConflictException When the email is already used.
+   */
+  @Post()
+  @Roles(Role.ADMIN)
+  @HttpCode(201)
+  @ApiOperation({
+    summary: 'Create a user',
+    description:
+      'Admins only. Creates an `ACTIVE` user with exactly one role (`["CUSTOMER"]` or ' +
+      '`["ADMIN"]`). Email, name and password follow the registration rules. A customer gets a ' +
+      'new `customerId` and `identity.user-registered` is published (also when Kafka is down: ' +
+      'the event is retried later); an admin gets no `customerId` and no event. The admin ' +
+      'chooses the initial password: the user should change it after the first login. The ' +
+      'creation is written to the audit trail in the same transaction.',
+  })
+  @ApiCreatedResponse({ type: UserSummaryResponseDto, description: 'The new user' })
+  @ApiBadRequestResponse({
+    description:
+      'A rule is broken (email, name, password, roles not exactly one of CUSTOMER or ADMIN), ' +
+      'a field is missing, an unknown field was sent, or the body is not valid JSON',
+  })
+  @ApiConflictResponse({ description: 'The email is already used' })
+  async create(
+    @Body() dto: CreateUserDto,
+    @CurrentUser() principal: AuthenticatedPrincipal,
+  ): Promise<UserSummaryResponseDto> {
+    try {
+      const user = await this.commandBus.execute<CreateUserCommand, UserSummaryReadModel>(
+        new CreateUserCommand(principal.userId, dto.email, dto.name, dto.password, dto.roles),
+      );
+      return UserSummaryResponseDto.from(user);
+    } catch (error) {
+      if (error instanceof UserValidationError) {
+        throw new BadRequestException(error.message);
+      }
+      if (error instanceof DuplicateEmailError) {
+        throw new ConflictException('email already registered');
       }
       throw error;
     }

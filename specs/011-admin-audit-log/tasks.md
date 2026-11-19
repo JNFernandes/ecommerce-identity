@@ -50,7 +50,7 @@ None (no new dependency or config).
 
 **Independent test**: no token, customer token, disabled/demoted admin token, invalid query params.
 
-- [ ] T011 [P] [US5] Component test `tests/component/audit-list-access.component.spec.ts`: no token 401, customer 403, disabled and demoted admin → generic 401; 400 (never 500) for `limit` 0/101/-1/1.5, `offset` -1/1.5, bad `actorId`/`targetId`, unknown `action`, unknown param, repeated `action`; `limit=100` → 200. Commit `test(US-11): add access and validation tests for GET /audit`.
+- [X] T011 [P] [US5] Component test `tests/component/audit-list-access.component.spec.ts`: no token 401, customer 403, disabled and demoted admin → generic 401; 400 (never 500) for `limit` 0/101/-1/1.5, `offset` -1/1.5, bad `actorId`/`targetId`, unknown `action`, unknown param, repeated `action`; `limit=100` → 200. Commit `test(US-11): add access and validation tests for GET /audit`.
 
 ## Phase 8: Polish
 

@@ -136,4 +136,99 @@ describe('DeadLetterRetryWorker', () => {
 
     expect(unref).toHaveBeenCalledTimes(1);
   });
+
+  describe('onModuleDestroy', () => {
+    /** Makes the next runBatch hang until the returned functions settle it. */
+    function hangNextRun(): { finish: () => void; fail: (error: Error) => void } {
+      const control: { finish: () => void; fail: (error: Error) => void } = {
+        finish: () => undefined,
+        fail: () => undefined,
+      };
+      runBatch.mockImplementationOnce(
+        () =>
+          new Promise<RetryRunSummary>((resolve, reject) => {
+            control.finish = (): void => resolve(EMPTY);
+            control.fail = (error: Error): void => reject(error);
+          }),
+      );
+      return control;
+    }
+
+    it('should clear the timer and stop claiming when idle, with no run afterwards', async () => {
+      const worker = build();
+      worker.onApplicationBootstrap();
+
+      await worker.onModuleDestroy();
+      jest.advanceTimersByTime(INTERVAL * 10);
+      await flush();
+
+      expect(requestStop).toHaveBeenCalledTimes(1);
+      expect(runBatch).not.toHaveBeenCalled();
+      expect(jest.getTimerCount()).toBe(0);
+    });
+
+    it('should wait for the run in progress and schedule nothing afterwards', async () => {
+      const run = hangNextRun();
+      const worker = build();
+      worker.onApplicationBootstrap();
+      jest.advanceTimersByTime(INTERVAL);
+
+      let done = false;
+      const destroying = worker.onModuleDestroy().then(() => {
+        done = true;
+      });
+      await flush();
+      expect(done).toBe(false);
+      expect(requestStop).toHaveBeenCalledTimes(1);
+
+      run.finish();
+      await destroying;
+      jest.advanceTimersByTime(INTERVAL * 10);
+      await flush();
+
+      expect(runBatch).toHaveBeenCalledTimes(1);
+    });
+
+    it('should return after the shutdown timeout when the run never finishes', async () => {
+      hangNextRun();
+      const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+      const worker = build();
+      worker.onApplicationBootstrap();
+      jest.advanceTimersByTime(INTERVAL);
+
+      const destroying = worker.onModuleDestroy();
+      await flush();
+      jest.advanceTimersByTime(SETTINGS.shutdownTimeoutMs);
+      await destroying;
+
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining('Outbound retry run still in progress after 500 ms'),
+      );
+    });
+
+    it('should log a run that fails after the timeout, without an unhandled rejection', async () => {
+      const run = hangNextRun();
+      const error = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+      const unhandled = jest.fn();
+      process.on('unhandledRejection', unhandled);
+      try {
+        const worker = build();
+        worker.onApplicationBootstrap();
+        jest.advanceTimersByTime(INTERVAL);
+        const destroying = worker.onModuleDestroy();
+        await flush();
+        jest.advanceTimersByTime(SETTINGS.shutdownTimeoutMs);
+        await destroying;
+
+        run.fail(new Error('pool closed'));
+        await flush();
+
+        expect(error).toHaveBeenCalledTimes(1);
+        expect(error).toHaveBeenCalledWith('Outbound retry run failed: pool closed');
+        expect(unhandled).not.toHaveBeenCalled();
+      } finally {
+        process.off('unhandledRejection', unhandled);
+      }
+    });
+  });
 });

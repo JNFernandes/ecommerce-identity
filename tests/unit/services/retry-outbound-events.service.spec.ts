@@ -291,6 +291,20 @@ describe('RetryOutboundEventsService', () => {
     });
   });
 
+  it('should claim no further row once a stop is requested, nor in later runs', async () => {
+    queue.push(rowOf(1), rowOf(2), rowOf(3));
+    republish.mockImplementationOnce(async () => {
+      service.requestStop();
+    });
+
+    const first = await service.runBatch();
+    const second = await service.runBatch();
+
+    expect(first.claimed).toBe(1);
+    expect(second.claimed).toBe(0);
+    expect(processNextDue).toHaveBeenCalledTimes(1);
+  });
+
   it('should log nothing at log level for an empty run', async () => {
     const summary = await service.runBatch();
 

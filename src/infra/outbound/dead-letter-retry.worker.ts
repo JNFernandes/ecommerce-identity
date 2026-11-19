@@ -1,4 +1,4 @@
-import { Injectable, Logger, OnApplicationBootstrap } from '@nestjs/common';
+import { Injectable, Logger, OnApplicationBootstrap, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { OutboundRetryConfig } from '../../config/configuration';
 import { RetryOutboundEventsService } from '../../services/retry-outbound-events.service';
@@ -15,15 +15,17 @@ function messageOf(error: unknown): string {
  * - Each run schedules the next only after it finishes, so runs never overlap in one instance.
  * - The timer is `unref()`'d, so it never keeps the process alive.
  * - A failed run is logged and the next run is still scheduled; the process never crashes.
+ * - On shutdown it stops claiming rows and waits, bounded, for the run in progress.
  *
  * Disabled with `OUTBOUND_RETRY_ENABLED=false`.
  */
 @Injectable()
-export class DeadLetterRetryWorker implements OnApplicationBootstrap {
+export class DeadLetterRetryWorker implements OnApplicationBootstrap, OnModuleDestroy {
   private readonly logger = new Logger(DeadLetterRetryWorker.name);
   private readonly settings: OutboundRetryConfig;
   private timer: NodeJS.Timeout | null = null;
   private running: Promise<void> | null = null;
+  private destroyed = false;
 
   /**
    * @param retries Performs one run.
@@ -66,7 +68,44 @@ export class DeadLetterRetryWorker implements OnApplicationBootstrap {
     }
   }
 
+  /**
+   * Stops the worker before the Kafka producer and the database pool close (they close in
+   * `onApplicationShutdown`, which Nest runs after every `onModuleDestroy`): clears the timer,
+   * stops claiming rows, and waits for the run in progress for at most `shutdownTimeoutMs`.
+   * After that it returns anyway; the unfinished row's transaction rolls back when the pool
+   * closes, so the row stays due for another instance. No run is scheduled afterwards.
+   */
+  async onModuleDestroy(): Promise<void> {
+    this.destroyed = true;
+    if (this.timer !== null) {
+      clearTimeout(this.timer);
+      this.timer = null;
+    }
+    this.retries.requestStop();
+    const running = this.running;
+    if (running === null) {
+      return;
+    }
+    let bound: NodeJS.Timeout | undefined;
+    const timedOut = new Promise<'timeout'>((resolve) => {
+      bound = setTimeout(() => resolve('timeout'), this.settings.shutdownTimeoutMs);
+      bound.unref();
+    });
+    // `running` never rejects (execute() logs failures), so abandoning it cannot leak a rejection.
+    const outcome = await Promise.race([running.then(() => 'finished' as const), timedOut]);
+    clearTimeout(bound);
+    if (outcome === 'timeout') {
+      this.logger.warn(
+        `Outbound retry run still in progress after ${this.settings.shutdownTimeoutMs} ms; ` +
+          'shutting down without waiting (unfinished rows stay due)',
+      );
+    }
+  }
+
   private scheduleNext(): void {
+    if (this.destroyed) {
+      return;
+    }
     this.timer = setTimeout(() => {
       this.timer = null;
       void this.runOnce().then(() => this.scheduleNext());

@@ -18,7 +18,7 @@ None: no dependency, migration or config file to create.
   (returns a new `User` with only the hash replaced; roles, status, `customerId` unchanged; JSDoc).
   Extend `tests/unit/domain/user.aggregate.spec.ts`: hash replaced, other fields identical, original
   instance untouched.
-- [ ] T002 Add password-change transaction to `src/repositories/user.repository.ts`: tx interface
+- [X] T002 Add password-change transaction to `src/repositories/user.repository.ts`: tx interface
   methods `savePasswordHash(user)` and `insertRefreshToken(token)` (map to `refresh_tokens` entity
   like `RefreshTokenRepository.saveWithLogin`), plus `inPasswordChangeTransaction(work)` following the
   `inAdminTransaction` pattern (line ~263). Work order inside: `findByIdForUpdate` →

@@ -26,7 +26,7 @@ tests → docs) rather than one phase per story; labels show which stories each 
 
 ## Phase 5: Docs
 
-- [ ] T006 [P] Amend constitution III (PATCH, settles `TODO(ROLE_CHANGE_CUSTOMER_ID)`) in `.specify/memory/constitution.md`; add `docs/adr/0010-role-changes.md` and index it in `docs/adr/README.md`; add the endpoint and token trade-off note to `README.md`.
+- [X] T006 [P] Amend constitution III (PATCH, settles `TODO(ROLE_CHANGE_CUSTOMER_ID)`) in `.specify/memory/constitution.md`; add `docs/adr/0010-role-changes.md` and index it in `docs/adr/README.md`; add the endpoint and token trade-off note to `README.md`.
 
 ## Dependencies
 

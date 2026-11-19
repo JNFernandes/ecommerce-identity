@@ -74,7 +74,7 @@ user unaffected; bad bodies/policy → 400; no token or disabled user → 401.
 
 ## Phase 5: Polish & docs
 
-- [ ] T007 Docs: `README.md` (endpoint row, rate-limit env vars, trade-off: old access tokens live
+- [X] T007 Docs: `README.md` (endpoint row, rate-limit env vars, trade-off: old access tokens live
   until expiry); `.specify/memory/constitution.md` PATCH 1.1.2 → 1.1.3 resolving
   `TODO(CURRENT_SESSION)` and `TODO(PASSWORD_CHANGE_RATE_LIMIT)` with sync report; `src/README.md`
   flow. No ADR, no `events.md` change. Commit `docs(US-12): ...`.

@@ -23,7 +23,7 @@ Controller → Service → Domain → Repository (Constitution Principle I).
 - `POST /auth/logout` — `AuthController` → `CommandBus` → `LogoutService`. Public, rate limited per
   client IP (throttler `logout`); always `204` for a well-formed body.
 - `GET` / `HEAD /.well-known/jwks.json` — `JwksController` → `JwksService` → `PublicKeySet`
-  (`KeyRing`). Public, not throttled (`@SkipThrottle` for every throttler), no Kafka or database.
+  (`KeyRing`). Public, not throttled (`onlyThrottlers()` skips every throttler), no Kafka or database.
   Sends the precomputed body with `Cache-Control: public, max-age=<JWKS_CACHE_SECONDS>` and a
   strong `ETag`; a matching `If-None-Match` (`controllers/if-none-match.ts`) gets `304`.
 - `GET /users/me` — `UsersController` → `QueryBus` → `GetCurrentUserService` (`@QueryHandler` of
@@ -219,6 +219,23 @@ from roles only, never secrets). Stored in `audit_records`, append-only: a trigg
   `revokeAllRefreshTokens` → `appendAudit`. After the commit: log line, then
   `UserEventDispatcher.dispatch` (dead-letter fallback).
 - `JoseTokenIssuer` puts `customerId` in a token only when the roles include `CUSTOMER`.
+
+**Added by US-12 (password change):**
+
+- `POST /users/me/password` — `UsersController.changePassword` (`ChangePasswordDto`) →
+  `CommandBus` → `ChangePasswordService`. `@Roles(CUSTOMER, ADMIN)`, `ThrottlerGuard` with only the
+  `password-change` throttler (tracker `user:<sub>|ip:<ip>`, from the principal the global
+  `JwtAuthGuard` attached). Throttler names and `onlyThrottlers` live in
+  `controllers/login-throttle.tracker.ts`. `InvalidCredentialsError` → `401 invalid credentials`,
+  `UserValidationError` → `400`; a missing or non-`ACTIVE` caller →
+  `InvalidAccessTokenError(USER_UNAVAILABLE)`.
+- **Password change flow:** `findById` → `PasswordHasher.verify(current)` → `PasswordPolicy` →
+  "differs" (string compare: the current one already matched the hash) → hash new + generate
+  refresh token (outside the transaction, so no row lock during argon2) →
+  `UserRepository.inPasswordChangeTransaction`: `findByIdForUpdate` (re-check `ACTIVE` and that the
+  hash is unchanged, else `401`) → `User.changePassword` → `savePasswordHash` →
+  `revokeAllRefreshTokens` → `insertRefreshToken` → sign the access token (a signing failure rolls
+  back). Then one log line with the user id. No event, no audit (not an admin mutation).
 
 **Domain events produced:** `identity.user-registered` (`UserRegistered`, after the user is
 committed; contract in `ecommerce-infra/docs/events.md`). Only for a new customer identity

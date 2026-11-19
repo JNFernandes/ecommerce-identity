@@ -1,6 +1,23 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+Version change:    1.1.2 → 1.1.3 (2026-11-19)
+Bump rationale:    PATCH: settles the two password change TODOs (US-12); clarifies Principle II
+                   without adding a new kind of rule.
+
+Settled TODOs:
+  - TODO(CURRENT_SESSION) — a password change revokes every refresh token of the user, the
+    caller's included, and returns a new pair (new family) to the caller in the login shape.
+  - TODO(PASSWORD_CHANGE_RATE_LIMIT) — `POST /users/me/password` is rate limited per user id and
+    client IP (default 5 per minute, `RATE_LIMIT_PASSWORD_CHANGE_*`); excess gets 429.
+
+Runtime guidance:
+  ✅ README.md — endpoint, rate limit variables and the access-token trade-off documented.
+  ✅ src/README.md — password change flow documented.
+
+=============================================================================================
+Previous report (1.1.2)
+=============================================================================================
 Version change:    1.1.1 → 1.1.2 (2026-11-19)
 Bump rationale:    PATCH: the 1.1.0 migration note on US-07 is resolved; no rule changes.
 
@@ -90,9 +107,9 @@ Deferred TODOs (to settle in the specs of the stories that implement them):
   - TODO(ROLE_CHANGE_CUSTOMER_ID): what happens to `customerId` when a role set gains or loses
     `CUSTOMER`, and whether a role change raises an event. (Settled in 1.1.1.)
   - TODO(CURRENT_SESSION): how "all other sessions" is determined on password change (the access
-    token carries no refresh-token family).
+    token carries no refresh-token family). (Settled in 1.1.3.)
   - TODO(PASSWORD_CHANGE_RATE_LIMIT): `POST /users/me/password` checks a password and is a
-    guessing target; rate limiting it is recommended but not yet required.
+    guessing target; rate limiting it is recommended but not yet required. (Settled in 1.1.3.)
 
 =============================================================================================
 Previous report (1.0.0)
@@ -191,7 +208,11 @@ is mandatory.
 - The request MUST include the current password; it is verified like a login (argon2id,
   constant-time) and a wrong current password fails the request without changing anything.
 - The new password MUST satisfy the registration password policy.
-- A successful change MUST revoke every other session of the user (their refresh token families).
+- A successful change MUST revoke every other session of the user. Since an access token names no
+  refresh-token family, every refresh token of the user is revoked and the caller gets a new pair
+  (new family) in the same transaction as the new hash. Access tokens already issued stay valid
+  until they expire.
+- The endpoint MUST be rate limited per user id and client IP; excess requests get 429.
 
 **Admin-created users (`POST /users`):**
 - The user gets the password the admin supplies. It MUST satisfy the registration password policy,
@@ -533,4 +554,4 @@ This constitution supersedes all other project conventions and style guides. Whe
 
 **Compliance**: Every PR review MUST verify that no constitutional principle is violated. Reviewers are empowered to block merges for violations without exception. New principles take effect immediately upon merge.
 
-**Version**: 1.1.2 | **Ratified**: 2026-11-17 | **Last Amended**: 2026-11-19
+**Version**: 1.1.3 | **Ratified**: 2026-11-17 | **Last Amended**: 2026-11-19

@@ -22,7 +22,7 @@ tests → docs) rather than one phase per story; labels show which stories each 
 
 ## Phase 4: Component tests
 
-- [ ] T005 [US1] [US2] [US3] [US4] [US5] Add `test/component/change-user-roles.component.spec.ts`: promote then login gets `ADMIN`; grant keeps sessions; demote revokes refresh tokens; removing `CUSTOMER` keeps `customerId`, no event, no `customerId` in new token; first `CUSTOMER` grant publishes one event, re-grant none, Kafka down → 200 + dead-letter; self-demotion and last-active-admin 409; concurrent mutual demotion leaves ≥1 `ACTIVE` admin; 400 (empty, unknown, repeated, missing, extra), 404, 401/403, demoted-actor 401; no-op 200 with no audit; one `ROLES_CHANGED` audit per change.
+- [X] T005 [US1] [US2] [US3] [US4] [US5] Add `test/component/change-user-roles.component.spec.ts`: promote then login gets `ADMIN`; grant keeps sessions; demote revokes refresh tokens; removing `CUSTOMER` keeps `customerId`, no event, no `customerId` in new token; first `CUSTOMER` grant publishes one event, re-grant none, Kafka down → 200 + dead-letter; self-demotion and last-active-admin 409; concurrent mutual demotion leaves ≥1 `ACTIVE` admin; 400 (empty, unknown, repeated, missing, extra), 404, 401/403, demoted-actor 401; no-op 200 with no audit; one `ROLES_CHANGED` audit per change.
 
 ## Phase 5: Docs
 

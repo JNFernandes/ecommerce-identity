@@ -82,7 +82,7 @@ No setup tasks: no package or configuration changes (plan "Technical Context").
 
 **Independent test**: each invalid body → 400; existing email → 409; nothing written for any of them.
 
-- [ ] T013 [US3] Component test `tests/component/users-create-validation.component.spec.ts` (PostgreSQL, Kafka unreachable): 400 for invalid email, name `"   "`, 101-char name, 9-char and 129-char password, password equal to the email, each missing field, `roles` `[]`, `["ROOT"]`, `["ADMIN","ADMIN"]`, `["CUSTOMER","ADMIN"]`, `["ADMIN","CUSTOMER"]`, extra `id` / `customerId` / `status` / `createdAt`, malformed JSON; 409 for an existing email in another case with spaces, including a `DISABLED` user's email; two concurrent requests with the same new email → one 201, one 409; after all of them: user count and `audit_records` count changed only by the successful creations, no dead-letter rows for failures. Commit `test(US-09): reject invalid and conflicting user creation`.
+- [X] T013 [US3] Component test `tests/component/users-create-validation.component.spec.ts` (PostgreSQL, Kafka unreachable): 400 for invalid email, name `"   "`, 101-char name, 9-char and 129-char password, password equal to the email, each missing field, `roles` `[]`, `["ROOT"]`, `["ADMIN","ADMIN"]`, `["CUSTOMER","ADMIN"]`, `["ADMIN","CUSTOMER"]`, extra `id` / `customerId` / `status` / `createdAt`, malformed JSON; 409 for an existing email in another case with spaces, including a `DISABLED` user's email; two concurrent requests with the same new email → one 201, one 409; after all of them: user count and `audit_records` count changed only by the successful creations, no dead-letter rows for failures. Commit `test(US-09): reject invalid and conflicting user creation`.
 
 ---
 

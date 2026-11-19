@@ -146,6 +146,151 @@ describe('RetryOutboundEventsService', () => {
     );
   });
 
+  describe('failures', () => {
+    let warn: jest.SpyInstance;
+    let error: jest.SpyInstance;
+
+    beforeEach(() => {
+      warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+      error = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    });
+
+    /** Every captured line, at every level. */
+    function allLines(): string[] {
+      return [log, warn, error].flatMap((spy) =>
+        spy.mock.calls.map((call: unknown[]) => call.map(String).join(' ')),
+      );
+    }
+
+    it('should reschedule a failed publish with the backoff delay and warn once', async () => {
+      queue.push(rowOf(1, { retryCount: 1 }));
+      republish.mockRejectedValue(new Error('broker down'));
+
+      const summary = await service.runBatch();
+
+      const { decision } = (await processNextDue.mock.results[0].value) as ProcessedRow;
+      expect(decision).toEqual({
+        status: OutboundRetryStatus.PENDING_RETRY,
+        retryCount: 2,
+        lastAttemptAt: NOW,
+        lastError: 'broker down',
+        nextRetryAt: new Date(NOW.getTime() + 10000),
+      });
+      expect(summary).toEqual({ claimed: 1, resolved: 0, failed: 1, exhausted: 0 });
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(warn).toHaveBeenCalledWith(
+        'Outbound retry failed: id=row-1 eventId=event-1 topic=identity.user-registered ' +
+          'key=user-1 attempt=2 nextAttemptAt=2026-11-19T10:00:10.000Z error=broker down',
+      );
+      expect(error).not.toHaveBeenCalled();
+    });
+
+    it('should exhaust a row whose failure reaches the maximum and log one error line', async () => {
+      queue.push(rowOf(1, { retryCount: 9 }));
+      republish.mockRejectedValue(new Error('broker down'));
+
+      const summary = await service.runBatch();
+
+      const { decision } = (await processNextDue.mock.results[0].value) as ProcessedRow;
+      expect(decision.status).toBe(OutboundRetryStatus.EXHAUSTED);
+      expect(decision.retryCount).toBe(10);
+      expect(summary).toEqual({ claimed: 1, resolved: 0, failed: 0, exhausted: 1 });
+      expect(warn).not.toHaveBeenCalled();
+      expect(error).toHaveBeenCalledTimes(1);
+      expect(error).toHaveBeenCalledWith(
+        'Outbound event exhausted, left for manual inspection: id=row-1 eventId=event-1 ' +
+          'topic=identity.user-registered key=user-1 attempts=10 lastError=broker down',
+      );
+    });
+
+    it.each([
+      ['no eventId', { aggregateId: 'user-1' }],
+      ['a non-string eventId', { eventId: 42 }],
+      ['an array', ['event-1']],
+      ['a string', 'event-1'],
+      ['null', null],
+    ])('should exhaust a row whose payload has %s without publishing', async (_label, payload) => {
+      queue.push(rowOf(1, { payload }));
+
+      const summary = await service.runBatch();
+
+      const { decision } = (await processNextDue.mock.results[0].value) as ProcessedRow;
+      expect(republish).not.toHaveBeenCalled();
+      expect(decision.status).toBe(OutboundRetryStatus.EXHAUSTED);
+      expect(decision.retryCount).toBe(1);
+      expect(decision.lastError).toBe('malformed payload: no string eventId');
+      expect(summary.exhausted).toBe(1);
+    });
+
+    it('should give each row of a mixed batch its own outcome', async () => {
+      queue.push(rowOf(1), rowOf(2), rowOf(3));
+      republish
+        .mockRejectedValueOnce(new Error('broker down'))
+        .mockResolvedValueOnce(undefined)
+        .mockRejectedValueOnce(new Error('timeout'));
+
+      const summary = await service.runBatch();
+
+      const statuses = await Promise.all(
+        processNextDue.mock.results.map(
+          async (result) => ((await result.value) as ProcessedRow).decision.status,
+        ),
+      );
+      expect(statuses).toEqual([
+        OutboundRetryStatus.PENDING_RETRY,
+        OutboundRetryStatus.RESOLVED,
+        OutboundRetryStatus.PENDING_RETRY,
+      ]);
+      expect(summary).toEqual({ claimed: 3, resolved: 1, failed: 2, exhausted: 0 });
+      expect(log).toHaveBeenCalledWith(
+        'Outbound retry run: claimed=3 resolved=1 failed=2 exhausted=0',
+      );
+    });
+
+    it('should end the run without throwing when a row cannot be processed', async () => {
+      queue.push(rowOf(1), rowOf(2));
+      processNextDue.mockRejectedValueOnce(new Error('connection terminated'));
+
+      const summary = await service.runBatch();
+
+      expect(summary).toEqual({ claimed: 0, resolved: 0, failed: 0, exhausted: 0 });
+      expect(processNextDue).toHaveBeenCalledTimes(1);
+      expect(error).toHaveBeenCalledWith('Outbound retry run stopped: connection terminated');
+    });
+
+    it('should keep the rows processed before a failure and report them', async () => {
+      queue.push(rowOf(1), rowOf(2));
+      processNextDue
+        .mockImplementationOnce(async (_t, _n, handler) => {
+          const row = queue.shift() as OutboundDeadLetterRow;
+          return { row, decision: await handler(row) };
+        })
+        .mockRejectedValueOnce(new Error('connection terminated'));
+
+      const summary = await service.runBatch();
+
+      expect(summary).toEqual({ claimed: 1, resolved: 1, failed: 0, exhausted: 0 });
+    });
+
+    it('should never log the payload or any of its personal fields', async () => {
+      queue.push(rowOf(1, { retryCount: 9 }), rowOf(2), rowOf(3));
+      republish
+        .mockRejectedValueOnce(new Error('broker down'))
+        .mockRejectedValueOnce(new Error('broker down'))
+        .mockResolvedValueOnce(undefined);
+
+      await service.runBatch();
+
+      const text = allLines().join('\n');
+      expect(text.length).toBeGreaterThan(0);
+      for (const n of [1, 2, 3]) {
+        expect(text).not.toContain(`secret-${n}@example.com`);
+        expect(text).not.toContain(`Secret Name ${n}`);
+        expect(text).not.toContain(`secret-customer-${n}`);
+      }
+    });
+  });
+
   it('should log nothing at log level for an empty run', async () => {
     const summary = await service.runBatch();
 

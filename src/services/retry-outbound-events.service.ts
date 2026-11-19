@@ -11,6 +11,7 @@ import { USER_REGISTERED_TOPIC } from '../infra/kafka/kafka.constants';
 import {
   OutboundDeadLetterRepository,
   OutboundDeadLetterRow,
+  ProcessedRow,
 } from '../repositories/outbound-dead-letter.repository';
 import { Clock } from './ports/clock';
 import { UserEventPublisher } from './ports/user-event-publisher';
@@ -86,16 +87,23 @@ export class RetryOutboundEventsService {
   async runBatch(): Promise<RetryRunSummary> {
     const summary: RetryRunSummary = { claimed: 0, resolved: 0, failed: 0, exhausted: 0 };
     for (let i = 0; i < this.settings.batchSize && !this.stopRequested; i += 1) {
-      const processed = await this.deadLetters.processNextDue(
-        USER_REGISTERED_TOPIC,
-        this.clock.now(),
-        (row) => this.attempt(row),
-      );
+      let processed: ProcessedRow | null;
+      try {
+        processed = await this.deadLetters.processNextDue(
+          USER_REGISTERED_TOPIC,
+          this.clock.now(),
+          (row) => this.attempt(row),
+        );
+      } catch (error) {
+        // The row's transaction rolled back, so it stays due; end this run, the next one retries.
+        this.logger.error(`Outbound retry run stopped: ${messageOf(error)}`);
+        break;
+      }
       if (processed === null) {
         break;
       }
       summary.claimed += 1;
-      this.count(summary, processed.decision);
+      this.record(summary, processed);
     }
     if (summary.claimed > 0) {
       this.logger.log(
@@ -122,16 +130,27 @@ export class RetryOutboundEventsService {
     return decideRetry(row.retryCount, result, this.clock.now(), this.settings);
   }
 
-  private count(summary: RetryRunSummary, decision: RetryDecision): void {
+  /** Counts the outcome and logs failures. Never logs the payload. */
+  private record(summary: RetryRunSummary, { row, decision }: ProcessedRow): void {
+    const context = `id=${row.id} eventId=${row.eventId} topic=${row.topic}`;
     switch (decision.status) {
       case OutboundRetryStatus.RESOLVED:
         summary.resolved += 1;
         break;
       case OutboundRetryStatus.PENDING_RETRY:
         summary.failed += 1;
+        this.logger.warn(
+          `Outbound retry failed: ${context} key=${row.key} attempt=${decision.retryCount} ` +
+            `nextAttemptAt=${decision.nextRetryAt?.toISOString() ?? 'unknown'} ` +
+            `error=${decision.lastError ?? ''}`,
+        );
         break;
       case OutboundRetryStatus.EXHAUSTED:
         summary.exhausted += 1;
+        this.logger.error(
+          `Outbound event exhausted, left for manual inspection: ${context} key=${row.key} ` +
+            `attempts=${decision.retryCount} lastError=${decision.lastError ?? ''}`,
+        );
         break;
     }
   }

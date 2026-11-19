@@ -23,18 +23,48 @@ wins.
 
 ```bash
 npm run build
-npm run lint
-npm run format:check
-npm run test              # also: test:unit, test:integration, test:component (needs Docker)
-npm run migration:run
+npm run lint              # --max-warnings 0; lint:fix to autofix
+npm run format:check      # format to rewrite
+npm run test              # unit + integration + component; integration/component need Docker
+npm run test:unit         # also: test:integration, test:component, test:cov (80% on domain/services)
+npm run keys:generate     # keys/private.pem + public.pem (git-ignored); -- --name next for rotation
+npm run migration:run     # also: migration:revert
 npm run start:dev
 ```
 
 ## Quality gate (after every task, before every commit)
 
-Run `npm run build`, `npm run lint`, `npm run format:check` and `npm run test`, in that order. All
-four must pass. Fix any failure before moving on. Never commit a failing build, a lint error or
-warning (`--max-warnings 0`), or a formatting violation. Never mark a task complete with a red gate.
+Run these four, in this order. All must pass (quiet form under Token economy):
+
+```bash
+npm run build
+npm run lint
+npm run format:check
+npm run test
+```
+
+Fix any failure before moving on. Never commit a failing build, a lint error or warning
+(`--max-warnings 0`), or a formatting violation. Never mark a task complete with a red gate. Docker
+must be running: `npm run test` includes the testcontainers suites.
+
+## Stories
+
+All implemented and merged; specs in `specs/NNN-*/`. A new story continues at US-13 / `specs/013-*`.
+
+| Story | Spec | Delivers |
+|---|---|---|
+| US-01 | `001-register-customer` | `POST /auth/register`, `identity.user-registered` |
+| US-02 | `002-login-email-password` | `POST /auth/login` |
+| US-03 | `003-jwks-key-rotation` | `GET /.well-known/jwks.json`, `keys:generate`, retired keys |
+| US-04 | `004-refresh-logout` | `POST /auth/refresh`, `POST /auth/logout`, reuse detection |
+| US-05 | `005-current-user-guards` | `GET /users/me`, default-deny guards |
+| US-06 | `006-admin-seed-list-users` | Admin seed, `GET /users`, `GET /users/{id}` |
+| US-07 | `007-enable-disable-user` | `PATCH /users/{id}/status` |
+| US-08 | `008-outbound-retry-worker` | Dead-letter retry worker |
+| US-09 | `009-admin-create-user` | `POST /users` |
+| US-10 | `010-admin-role-management` | `PUT /users/{id}/roles` |
+| US-11 | `011-admin-audit-log` | `GET /audit` |
+| US-12 | `012-change-password` | `POST /users/me/password` |
 
 ## Token economy
 

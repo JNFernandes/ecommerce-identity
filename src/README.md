@@ -45,10 +45,24 @@ Controller → Service → Domain → Repository (Constitution Principle I).
 1. Domain: `Email`, `UserName`, `PasswordPolicy` (checked before hashing), then
    `User.registerCustomer`, which records `UserRegistered`.
 2. `PasswordHasher.hash` (argon2id), then `UserRepository.save` — the PostgreSQL commit comes first.
-3. `UserEventPublisher.publishUserRegistered` for each pulled domain event. On failure: log topic,
-   key, `eventId`, `aggregateId` and cause (never the password or hash), then
-   `OutboundDeadLetterRepository.recordFailure` (`PENDING_RETRY`, same `eventId`). The client
-   gets `201` either way.
+3. `UserEventDispatcher.dispatch(user)`: `UserEventPublisher.publishUserRegistered` for each pulled
+   domain event. On failure: log topic, key, `eventId`, `aggregateId` and cause (never the password
+   or hash), then `OutboundDeadLetterRepository.recordFailure` (`PENDING_RETRY`, same `eventId`).
+   The client gets `201` either way. The dispatcher is shared with admin creation.
+
+**Admin user creation flow** (US-09, `POST /users`, `@Roles(ADMIN)`, `CreateUserService`):
+
+1. Domain: `Email`, `UserName`, `PasswordPolicy`, `User.assertRolesForAdminCreation` (exactly
+   `[CUSTOMER]` or `[ADMIN]`), all before hashing; then `PasswordHasher.hash` and
+   `User.createByAdmin` (a customer records `UserRegistered`, an admin nothing).
+2. `UserRepository.inAdminTransaction`: `lockAdminChanges` → `findById(actor)` (missing or not an
+   `ACTIVE` admin → generic `401`) → `insertUser` (`DuplicateEmailError` → `409`) →
+   `appendAudit(AuditRecord.userCreated(...))` → commit. User and audit row commit together.
+3. Log `user created: actorId targetId roles`, then `UserEventDispatcher.dispatch(user)`.
+
+**Audit trail** (`domain/audit/`): `AuditAction`, immutable `AuditRecord` (`before`/`after` built
+from roles only, never secrets). Stored in `audit_records`, append-only: a trigger rejects every
+`UPDATE` and `DELETE` (ADR 0009). Read endpoint: US-11.
 
 **Outbound retry flow** (US-08, no endpoint):
 

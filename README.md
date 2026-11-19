@@ -8,10 +8,11 @@ The rules for this repository are in the constitution,
 [`.specify/memory/constitution.md`](.specify/memory/constitution.md). The shared event contracts
 are in `ecommerce-infra/docs/events.md`, which is the source of truth.
 
-> **Status: in progress.** US-01 to US-07 are implemented: customer registration, login, the JWKS
+> **Status: in progress.** US-01 to US-09 are implemented: customer registration, login, the JWKS
 > endpoint with key rotation, refresh and logout, `GET /users/me` with default-deny role guards, the
 > startup admin seed, the admin `GET /users` and `GET /users/{id}`, and enabling or disabling users
-> with `PATCH /users/{id}/status`. Everything marked **planned** below is set by the constitution but
+> with `PATCH /users/{id}/status`, the outbound retry worker (US-08) and admin user creation with
+> `POST /users` (US-09). Everything marked **planned** below is set by the constitution but
 > not built yet.
 
 > **HTTPS is required outside local development.** This service receives passwords and issues
@@ -21,10 +22,10 @@ are in `ecommerce-infra/docs/events.md`, which is the source of truth.
 
 | Role | How it is created | `customerId` |
 |---|---|---|
-| `CUSTOMER` | Public registration (`POST /auth/register`) | New, generated at registration |
-| `ADMIN` | The startup seed from `ADMIN_EMAIL` / `ADMIN_PASSWORD` when no admin exists ([Admin seed](#admin-seed)), or an `ADMIN` through `POST /users` (planned) | None |
+| `CUSTOMER` | Public registration (`POST /auth/register`), or an `ADMIN` through `POST /users` | New, generated at creation |
+| `ADMIN` | The startup seed from `ADMIN_EMAIL` / `ADMIN_PASSWORD` when no admin exists ([Admin seed](#admin-seed)), or an `ADMIN` through `POST /users` | None |
 
-Roles change only through `PUT /users/{id}/roles`, called by an `ADMIN` (planned); never
+A user holds exactly one role. Roles change only through `PUT /users/{id}/roles`, called by an `ADMIN` (planned); never
 self-service. A user cannot remove their own `ADMIN` role, and the last `ACTIVE` admin can never
 lose `ADMIN` or be disabled. Every user creation by an admin, role change and status change is
 recorded in an append-only audit trail readable by admins through `GET /audit` (planned)
@@ -51,7 +52,7 @@ recorded in an append-only audit trail readable by admins through `GET /audit` (
 | `GET /users/{id}` | `ADMIN` | implemented |
 | `PATCH /users/{id}/status` | `ADMIN` | implemented (audit record: planned) |
 | `POST /users/me/password` | `CUSTOMER`, `ADMIN` | planned |
-| `POST /users` | `ADMIN` | planned |
+| `POST /users` | `ADMIN` | implemented |
 | `PUT /users/{id}/roles` | `ADMIN` | planned |
 | `GET /audit` | `ADMIN` | planned |
 
@@ -114,6 +115,31 @@ authentication (any `Authorization` header is ignored), is not rate limited, and
 PostgreSQL nor Kafka. Responses carry `Cache-Control: public, max-age=<JWKS_CACHE_SECONDS>` and a
 strong `ETag`; a request whose `If-None-Match` matches (exact, `W/` form, in a list, or `*`) gets
 `304` with the same headers and no body.
+
+### `POST /users`
+
+Admins only. Creates an `ACTIVE` user with **exactly one** role:
+
+```json
+{ "email": "bea@example.com", "name": "Bea", "password": "bea-initial-pass-123", "roles": ["ADMIN"] }
+```
+
+- Email, name and password follow the registration rules (trimmed, lowercased email; 10–128
+  character password, not equal to the email). `roles` is `["CUSTOMER"]` or `["ADMIN"]`; an
+  empty list, an unknown or repeated role, or both roles return `400`. Any other field (`id`,
+  `customerId`, `status`, …) returns `400`.
+- `201` with the user in the `GET /users/{id}` shape (no password, no hash). A customer gets a new
+  `customerId` and `identity.user-registered` is published after the commit, exactly as for
+  registration (dead-lettered and retried when Kafka is down). An admin gets no `customerId` and no
+  event.
+- `409` when the email is already used (whatever the case or the user's status). `401` without a
+  token, or when the caller is no longer an `ACTIVE` admin (their token may still be valid);
+  `403` for a customer.
+- The user and an audit record (`USER_CREATED`: actor id, new user id, roles, time) are written
+  in one transaction ([ADR 0009](docs/adr/0009-append-only-audit-table.md)); one log line
+  `user created: actorId=… targetId=… roles=…` follows. Nothing secret is logged or audited.
+- **Trade-off:** the admin chooses the initial password and therefore knows it. The user should
+  change it with `POST /users/me/password` (planned) right after the first login.
 
 ### `POST /auth/register`
 
@@ -223,7 +249,7 @@ Implemented and tested by `tests/support/reference-verifier.ts`
 ## Admin seed
 
 The seed creates the **first** administrator; later admins are created by an admin through
-`POST /users` (planned). At startup, after migrations and before the server accepts requests, the
+`POST /users`. At startup, after migrations and before the server accepts requests, the
 service creates the first administrator from three variables:
 
 | Variable | Rule |

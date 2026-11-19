@@ -21,7 +21,7 @@ import { AccessTokenExceptionFilter } from './controllers/auth/access-token-exce
 import { JwtAuthGuard } from './controllers/auth/jwt-auth.guard';
 import { RolesGuard } from './controllers/auth/roles.guard';
 import { RoutePolicyCheck } from './controllers/auth/route-policy.check';
-import { AuthController, REGISTER_THROTTLER } from './controllers/auth.controller';
+import { AuthController } from './controllers/auth.controller';
 import { AuditController } from './controllers/audit.controller';
 import { HealthController } from './controllers/health.controller';
 import { JwksController } from './controllers/jwks.controller';
@@ -31,7 +31,10 @@ import {
   LOGIN_IP_THROTTLER,
   loginThrottleTracker,
   LOGOUT_THROTTLER,
+  PASSWORD_CHANGE_THROTTLER,
+  passwordChangeThrottleTracker,
   REFRESH_THROTTLER,
+  REGISTER_THROTTLER,
 } from './controllers/login-throttle.tracker';
 import { HealthService } from './services/health.service';
 import { OutboundDeadLetterRepository } from './repositories/outbound-dead-letter.repository';
@@ -54,6 +57,7 @@ import { UserEventPublisher } from './services/ports/user-event-publisher';
 import { UserEventsProducer } from './infra/kafka/user-events.producer';
 import { DEFAULT_JWKS_CACHE_SECONDS, JwksService } from './services/jwks.service';
 import { AdminSeedService } from './services/admin-seed.service';
+import { ChangePasswordService } from './services/change-password.service';
 import { ChangeUserRolesService } from './services/change-user-roles.service';
 import { ChangeUserStatusService } from './services/change-user-status.service';
 import { CreateUserService } from './services/create-user.service';
@@ -137,7 +141,7 @@ function createJwksService(publicKeySet: PublicKeySet, configService: ConfigServ
     ThrottlerModule.forRootAsync({
       inject: [ConfigService],
       useFactory: (configService: ConfigService) => {
-        const { register, login, refresh, logout } =
+        const { register, login, refresh, logout, passwordChange } =
           configService.getOrThrow<RateLimitConfig>('rateLimit');
         return [
           { name: REGISTER_THROTTLER, limit: register.limit, ttl: register.ttlMs },
@@ -164,6 +168,12 @@ function createJwksService(publicKeySet: PublicKeySet, configService: ConfigServ
             limit: logout.limit,
             ttl: logout.ttlMs,
             getTracker: loginThrottleTracker('ip'),
+          },
+          {
+            name: PASSWORD_CHANGE_THROTTLER,
+            limit: passwordChange.limit,
+            ttl: passwordChange.ttlMs,
+            getTracker: passwordChangeThrottleTracker(),
           },
         ];
       },
@@ -225,6 +235,7 @@ function createJwksService(publicKeySet: PublicKeySet, configService: ConfigServ
     ChangeUserStatusService,
     ChangeUserRolesService,
     CreateUserService,
+    ChangePasswordService,
     RetryOutboundEventsService,
     DeadLetterRetryWorker,
   ],

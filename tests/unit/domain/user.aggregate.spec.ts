@@ -353,6 +353,49 @@ describe('User', () => {
       });
     });
 
+    describe('changePassword', () => {
+      const NEW_HASH = '$argon2id$v=19$m=65536,t=3,p=4$bmV3c2FsdA$bmV3aGFzaA';
+
+      it.each([[[Role.CUSTOMER]], [[Role.ADMIN]], [[Role.CUSTOMER, Role.ADMIN]]])(
+        'should return a user with only the hash and updatedAt replaced (roles %j)',
+        (roles) => {
+          const user = stored(UserStatus.ACTIVE, roles);
+
+          const changed = user.changePassword(NEW_HASH, AT);
+
+          expect(changed.passwordHash).toBe(NEW_HASH);
+          expect(changed.updatedAt).toEqual(AT);
+          expect(changed.status).toBe(UserStatus.ACTIVE);
+          expect(untouchedFields(changed)).toEqual({
+            ...(untouchedFields(user) as object),
+            passwordHash: NEW_HASH,
+          });
+        },
+      );
+
+      it('should leave the original instance untouched', () => {
+        const user = stored(UserStatus.ACTIVE);
+        const before = { ...(untouchedFields(user) as object), updatedAt: user.updatedAt };
+
+        const changed = user.changePassword(NEW_HASH, AT);
+
+        expect(changed).not.toBe(user);
+        expect({ ...(untouchedFields(user) as object), updatedAt: user.updatedAt }).toEqual(before);
+      });
+
+      it('should refuse a DISABLED user with the generic credentials error', () => {
+        expect(() => stored(UserStatus.DISABLED).changePassword(NEW_HASH, AT)).toThrow(
+          InvalidCredentialsError,
+        );
+      });
+
+      it('should raise no domain event', () => {
+        expect(stored(UserStatus.ACTIVE).changePassword(NEW_HASH, AT).pullDomainEvents()).toEqual(
+          [],
+        );
+      });
+    });
+
     describe('isActiveAdmin', () => {
       it.each([
         ['an ACTIVE admin', UserStatus.ACTIVE, [Role.ADMIN], true],

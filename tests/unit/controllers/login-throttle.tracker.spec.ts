@@ -1,5 +1,8 @@
 import { ExecutionContext } from '@nestjs/common';
-import { loginThrottleTracker } from '../../../src/controllers/login-throttle.tracker';
+import {
+  loginThrottleTracker,
+  passwordChangeThrottleTracker,
+} from '../../../src/controllers/login-throttle.tracker';
 
 const context = {} as ExecutionContext;
 
@@ -52,5 +55,34 @@ describe('loginThrottleTracker', () => {
     it('should use a fixed key when the IP is unknown', async () => {
       await expect(track({})).resolves.toBe('unknown');
     });
+  });
+});
+
+describe('passwordChangeThrottleTracker', () => {
+  const track = (req: Record<string, unknown>): Promise<string> =>
+    Promise.resolve(passwordChangeThrottleTracker()(req, context));
+
+  it('should key on the principal user id and the client IP', async () => {
+    await expect(track({ ip: '203.0.113.1', principal: { userId: 'u-1' } })).resolves.toBe(
+      'user:u-1|ip:203.0.113.1',
+    );
+  });
+
+  it('should give two users on the same IP different buckets', async () => {
+    const ana = await track({ ip: '203.0.113.1', principal: { userId: 'u-1' } });
+    const bob = await track({ ip: '203.0.113.1', principal: { userId: 'u-2' } });
+
+    expect(ana).not.toBe(bob);
+  });
+
+  it.each([undefined, null, {}, { userId: 7 }])(
+    'should fall back to the IP without a usable principal (%j)',
+    async (principal) => {
+      await expect(track({ ip: '203.0.113.1', principal })).resolves.toBe('ip:203.0.113.1');
+    },
+  );
+
+  it('should use unknown when the request has no IP', async () => {
+    await expect(track({ principal: { userId: 'u-1' } })).resolves.toBe('user:u-1|ip:unknown');
   });
 });

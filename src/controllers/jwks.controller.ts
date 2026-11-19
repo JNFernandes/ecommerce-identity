@@ -7,18 +7,11 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
-import { SkipThrottle } from '@nestjs/throttler';
 import { Response } from 'express';
 import { JwksResponseDto } from '../dto/jwks-response.dto';
 import { JwksService } from '../services/jwks.service';
-import { REGISTER_THROTTLER } from './auth.controller';
 import { ifNoneMatchMatches } from './if-none-match';
-import {
-  LOGIN_EMAIL_THROTTLER,
-  LOGIN_IP_THROTTLER,
-  LOGOUT_THROTTLER,
-  REFRESH_THROTTLER,
-} from './login-throttle.tracker';
+import { onlyThrottlers } from './login-throttle.tracker';
 import { Public } from './auth/public.decorator';
 
 /**
@@ -29,13 +22,7 @@ import { Public } from './auth/public.decorator';
 @ApiTags('jwks')
 @Public()
 @Controller('.well-known')
-@SkipThrottle({
-  [REGISTER_THROTTLER]: true,
-  [LOGIN_IP_THROTTLER]: true,
-  [LOGIN_EMAIL_THROTTLER]: true,
-  [REFRESH_THROTTLER]: true,
-  [LOGOUT_THROTTLER]: true,
-})
+@onlyThrottlers()
 export class JwksController {
   constructor(private readonly jwksService: JwksService) {}
 

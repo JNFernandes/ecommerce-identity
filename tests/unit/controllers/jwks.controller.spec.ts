@@ -1,11 +1,7 @@
 import { GUARDS_METADATA } from '@nestjs/common/constants';
 import { THROTTLER_SKIP } from '@nestjs/throttler/dist/throttler.constants';
 import { Response } from 'express';
-import { REGISTER_THROTTLER } from '../../../src/controllers/auth.controller';
-import {
-  LOGIN_EMAIL_THROTTLER,
-  LOGIN_IP_THROTTLER,
-} from '../../../src/controllers/login-throttle.tracker';
+import { ALL_THROTTLERS } from '../../../src/controllers/login-throttle.tracker';
 import { JwksController } from '../../../src/controllers/jwks.controller';
 import { JwksService, JwksSnapshot } from '../../../src/services/jwks.service';
 
@@ -84,10 +80,7 @@ describe('JwksController', () => {
     expect(Reflect.getMetadata(GUARDS_METADATA, handler as object)).toBeUndefined();
   });
 
-  it.each([REGISTER_THROTTLER, LOGIN_IP_THROTTLER, LOGIN_EMAIL_THROTTLER])(
-    'should skip the %s throttler',
-    (name) => {
-      expect(Reflect.getMetadata(`${THROTTLER_SKIP}${name}`, JwksController)).toBe(true);
-    },
-  );
+  it.each([...ALL_THROTTLERS])('should skip the %s throttler', (name) => {
+    expect(Reflect.getMetadata(`${THROTTLER_SKIP}${name}`, JwksController)).toBe(true);
+  });
 });

@@ -4,6 +4,7 @@ import { EntityManager, IsNull, Repository } from 'typeorm';
 import { AuditRecord } from '../domain/audit/audit-record';
 import { Email } from '../domain/email.value-object';
 import { DuplicateEmailError } from '../domain/errors/duplicate-email.error';
+import { RefreshToken } from '../domain/refresh-token.aggregate';
 import { Role } from '../domain/role.enum';
 import { User } from '../domain/user.aggregate';
 import { UserName } from '../domain/user-name.value-object';
@@ -13,6 +14,7 @@ import { UserEntity } from '../infra/database/entities/user.entity';
 import { ListUsersQuery } from '../queries/list-users.query';
 import { UserPageReadModel, UserSummaryReadModel } from '../queries/user-summary.read-model';
 import { isUniqueViolation } from './errors/is-unique-violation';
+import { RefreshTokenRepository } from './refresh-token.repository';
 
 /**
  * Key of the transaction-scoped advisory lock that serializes every admin mutation (status
@@ -96,8 +98,36 @@ export interface AdminTx {
   appendAudit(record: AuditRecord): Promise<void>;
 }
 
-/** {@link AdminTx} bound to one TypeORM transaction manager. */
-class EntityManagerAdminTx implements AdminTx {
+/**
+ * Persistence operations available inside one password change transaction (see
+ * {@link UserRepository.inPasswordChangeTransaction}).
+ *
+ * Order: `findByIdForUpdate` → `savePasswordHash` → `revokeAllRefreshTokens` →
+ * `insertRefreshToken`. The user row is locked first, like every refresh (`FOR SHARE`) and status
+ * change (`FOR UPDATE`), so a concurrent refresh either commits before the revocation (and its new
+ * token is revoked too) or waits and then sees its token revoked; no cycle is possible.
+ */
+export interface PasswordChangeTx extends Pick<
+  AdminTx,
+  'findByIdForUpdate' | 'revokeAllRefreshTokens'
+> {
+  /**
+   * Writes the user's `passwordHash` and `updatedAt`; no other column is touched.
+   *
+   * @param user The user, after `changePassword`.
+   */
+  savePasswordHash(user: User): Promise<void>;
+
+  /**
+   * Inserts a newly issued refresh token (holds the hash, never the value).
+   *
+   * @param token The token to store.
+   */
+  insertRefreshToken(token: RefreshToken): Promise<void>;
+}
+
+/** {@link AdminTx} and {@link PasswordChangeTx} bound to one TypeORM transaction manager. */
+class EntityManagerUserTx implements AdminTx, PasswordChangeTx {
   constructor(private readonly manager: EntityManager) {}
 
   async lockAdminChanges(): Promise<void> {
@@ -141,6 +171,18 @@ class EntityManagerAdminTx implements AdminTx {
       { id: user.id },
       { roles: user.roles, customerId: user.customerId, updatedAt: user.updatedAt },
     );
+  }
+
+  async savePasswordHash(user: User): Promise<void> {
+    await this.manager.update(
+      UserEntity,
+      { id: user.id },
+      { passwordHash: user.passwordHash, updatedAt: user.updatedAt },
+    );
+  }
+
+  async insertRefreshToken(token: RefreshToken): Promise<void> {
+    await this.manager.insert(RefreshTokenEntity, RefreshTokenRepository.toEntity(token));
   }
 
   async revokeAllRefreshTokens(userId: string, at: Date): Promise<number> {
@@ -259,9 +301,20 @@ export class UserRepository {
    * @returns What `work` resolved to.
    */
   async inAdminTransaction<T>(work: (tx: AdminTx) => Promise<T>): Promise<T> {
-    return this.repository.manager.transaction((manager) =>
-      work(new EntityManagerAdminTx(manager)),
-    );
+    return this.repository.manager.transaction((manager) => work(new EntityManagerUserTx(manager)));
+  }
+
+  /**
+   * Runs `work` in one database transaction (READ COMMITTED) for a self-service password change.
+   * Everything `work` does through the given {@link PasswordChangeTx} commits when it resolves and
+   * rolls back when it rejects, so the new hash, the revocations and the new token are kept
+   * together or not at all.
+   *
+   * @param work The unit of work; its result is returned after the commit.
+   * @returns What `work` resolved to.
+   */
+  async inPasswordChangeTransaction<T>(work: (tx: PasswordChangeTx) => Promise<T>): Promise<T> {
+    return this.repository.manager.transaction((manager) => work(new EntityManagerUserTx(manager)));
   }
 
   /**

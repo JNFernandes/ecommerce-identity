@@ -8,13 +8,12 @@ The rules for this repository are in the constitution,
 [`.specify/memory/constitution.md`](.specify/memory/constitution.md). The shared event contracts
 are in `ecommerce-infra/docs/events.md`, which is the source of truth.
 
-> **Status: in progress.** US-01 to US-09 are implemented: customer registration, login, the JWKS
+> **Status: in progress.** US-01 to US-12 are implemented: customer registration, login, the JWKS
 > endpoint with key rotation, refresh and logout, `GET /users/me` with default-deny role guards, the
 > startup admin seed, the admin `GET /users` and `GET /users/{id}`, and enabling or disabling users
 > with `PATCH /users/{id}/status`, the outbound retry worker (US-08) and admin user creation with
 > `POST /users` (US-09), role changes with `PUT /users/{id}/roles` (US-10) and the audit trail
-> `GET /audit` (US-11). Everything marked **planned** below is set by the constitution but
-> not built yet.
+> `GET /audit` (US-11), and changing one's own password with `POST /users/me/password` (US-12).
 
 > **HTTPS is required outside local development.** This service receives passwords and issues
 > tokens; never expose it over plain HTTP except on `localhost`.
@@ -52,7 +51,7 @@ recorded in an append-only audit trail readable by admins through [`GET /audit`]
 | `GET /users` | `ADMIN` | implemented |
 | `GET /users/{id}` | `ADMIN` | implemented |
 | `PATCH /users/{id}/status` | `ADMIN` | implemented |
-| `POST /users/me/password` | `CUSTOMER`, `ADMIN` | planned |
+| `POST /users/me/password` | `CUSTOMER`, `ADMIN` | implemented |
 | `POST /users` | `ADMIN` | implemented |
 | `PUT /users/{id}/roles` | `ADMIN` | implemented |
 | `GET /audit` | `ADMIN` | implemented |
@@ -167,7 +166,7 @@ Admins only. Creates an `ACTIVE` user with **exactly one** role:
   in one transaction ([ADR 0009](docs/adr/0009-append-only-audit-table.md)); one log line
   `user created: actorId=… targetId=… roles=…` follows. Nothing secret is logged or audited.
 - **Trade-off:** the admin chooses the initial password and therefore knows it. The user should
-  change it with `POST /users/me/password` (planned) right after the first login.
+  change it with `POST /users/me/password` right after the first login.
 
 ### `GET /audit`
 
@@ -252,6 +251,24 @@ it revokes every token of its family. `400` for an invalid body; `429` past
 `RATE_LIMIT_LOGOUT_LIMIT` per client IP within `RATE_LIMIT_LOGOUT_TTL_MS`; `5xx` if the database is
 down (never `204`).
 
+### Change my password
+
+`POST /users/me/password` (`CUSTOMER`, `ADMIN`) with `{"currentPassword": "...", "newPassword":
+"..."}` returns `200` with a new token pair in the login shape, so the caller stays signed in. In one
+transaction it stores the new argon2id hash, revokes **every** refresh token of the user (every
+session, the calling one included) and stores the new refresh token (new family). No event is
+published; it works with Kafka down.
+
+| Case | Response |
+|------|----------|
+| Missing/empty/non-string field, unknown property, invalid JSON | `400` |
+| Wrong current password (checked first) | `401 invalid credentials` |
+| New password: under 10 or over 128 characters, the email (any case), or the current one | `400` |
+| No or invalid token, user disabled or deleted | `401 unauthorized` (generic) |
+| More than `RATE_LIMIT_PASSWORD_CHANGE_LIMIT` attempts per user and IP in the window | `429` |
+
+The success is logged with the user id only; passwords, hashes and tokens are never logged.
+
 ### Session trade-offs
 
 - **Access tokens outlive logout.** Access tokens are stateless JWTs: one issued before a logout
@@ -262,6 +279,9 @@ down (never `204`).
   `JWT_ACCESS_TTL_SECONDS`. `GET /users/me`, login, refresh and `PATCH /users/{id}/status` read the
   current status and refuse the user at once; every refresh token is already revoked
   ([ADR 0006](docs/adr/0006-status-changes-serialized-and-sessions-revoked.md)).
+- **A password change ends other sessions at their next refresh, not at once.** Access tokens
+  issued before the change stay valid until `exp`, at most `JWT_ACCESS_TTL_SECONDS`; every refresh
+  token issued before it is refused.
 - **Role changes reach access tokens only at refresh or login.** A token issued before a role
   change keeps its old roles until `exp`, at most `JWT_ACCESS_TTL_SECONDS`. Removing a role
   revokes every refresh token, so the user must log in again to get the reduced roles.
@@ -490,6 +510,8 @@ The RS256 private key is read from `JWT_PRIVATE_KEY_PATH` and is **never committ
 | `RATE_LIMIT_REFRESH_TTL_MS` | `60000` | Length of that window, in ms |
 | `RATE_LIMIT_LOGOUT_LIMIT` | `30` | `POST /auth/logout` requests allowed per client IP per window |
 | `RATE_LIMIT_LOGOUT_TTL_MS` | `60000` | Length of that window, in ms |
+| `RATE_LIMIT_PASSWORD_CHANGE_LIMIT` | `5` | `POST /users/me/password` requests allowed per user id and client IP per window (every request counts) |
+| `RATE_LIMIT_PASSWORD_CHANGE_TTL_MS` | `60000` | Length of that window, in ms |
 | `JWT_ISSUER` | unset, **required** | `iss` claim of access tokens |
 | `JWT_AUDIENCE` | unset, **required** | `aud` claim of access tokens |
 | `JWT_ACCESS_TTL_SECONDS` | `900` | Access token lifetime, in seconds |

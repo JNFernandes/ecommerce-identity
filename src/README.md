@@ -146,6 +146,34 @@ Controller → Service → Domain → Repository (Constitution Principle I).
 - Migration `AddUserListIndexes20261118120000` — `IDX_users_created_at_id` and
   `IDX_users_email_lower_prefix` (`lower(email) text_pattern_ops`).
 
+**Added by US-07 (enable or disable a user):**
+
+- `PATCH /users/{id}/status` — `UsersController.changeStatus` (`ParseUUIDPipe`,
+  `ChangeUserStatusDto`) → `CommandBus` → `ChangeUserStatusService` (`@CommandHandler` of
+  `ChangeUserStatusCommand`). `@Roles(ADMIN)`. `UserNotFoundError` → `404`;
+  `CannotDisableSelfError` and `LastActiveAdminError` → `409`; a missing or disabled acting admin
+  throws `InvalidAccessTokenError(USER_UNAVAILABLE)`, the generic `401`. No event, no Kafka.
+- Domain: `User.assertCanBeDisabledBy` (self rule), `disable`, `enable` (return whether the status
+  changed; a no-op writes and logs nothing) and `isActiveAdmin`; `domain/last-active-admin-policy.ts`
+  (`LastActiveAdminPolicy.assertCanDisable`).
+- `repositories/user.repository.ts` — `inStatusTransaction(work)` hands the work a `UserStatusTx`
+  (`lockStatusChanges`, `findById`, `findByIdForUpdate`, `countActiveAdmins`, `saveStatus` writing
+  only `status` / `updatedAt`, `revokeAllRefreshTokens`). `queries/user-summary.read-model.ts` gains
+  `toUserSummary(user)`, so the response matches `GET /users/{id}`.
+- **Status change flow** (one transaction, in this lock order):
+  `pg_advisory_xact_lock(USER_STATUS_LOCK_KEY)` → acting admin re-read (`ACTIVE` admin or `401`) →
+  target `SELECT … FOR UPDATE` (`404`) → `assertCanBeDisabledBy` → for an `ACTIVE` admin target,
+  `countActiveAdmins` + `LastActiveAdminPolicy` → `disable` / `enable` → `saveStatus` → (disable)
+  `revokeAllRefreshTokens`. The log line `user status changed: actorId targetId from to
+  revokedTokens` is written after the commit. The advisory lock serializes status changes, so
+  crossed disables of two admins cannot deadlock and the admin count is exact.
+- **Refresh lock order** is now `findByHash` → `lockUserForShare` (`SELECT 1 … FOR SHARE` on the
+  user row) → `lockFamily` → `findByHashForUpdate`: a disable waits for an in-flight refresh and
+  then revokes its successor, or the refresh waits and sees `DISABLED`.
+- **Login**: `RefreshTokenRepository.saveWithLogin` updates `lastLoginAt` only
+  `WHERE status = 'ACTIVE'`; with 0 rows it throws `InvalidCredentialsError` and stores no token,
+  so a disable that commits between the password check and the save wins.
+
 **Domain events produced:** `identity.user-registered` (`UserRegistered`, after the user is
 committed; contract in `ecommerce-infra/docs/events.md`). Customers only: the admin seed publishes
 nothing.

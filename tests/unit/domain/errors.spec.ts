@@ -1,3 +1,4 @@
+import { CannotDisableSelfError } from '../../../src/domain/errors/cannot-disable-self.error';
 import { DuplicateEmailError } from '../../../src/domain/errors/duplicate-email.error';
 import {
   AccessTokenFailureReason,
@@ -8,6 +9,7 @@ import {
   InvalidRefreshTokenError,
   RefreshFailureReason,
 } from '../../../src/domain/errors/invalid-refresh-token.error';
+import { LastActiveAdminError } from '../../../src/domain/errors/last-active-admin.error';
 import { UserNotFoundError } from '../../../src/domain/errors/user-not-found.error';
 import { UserValidationError } from '../../../src/domain/errors/user-validation.error';
 import { Role } from '../../../src/domain/role.enum';
@@ -78,6 +80,24 @@ describe('domain errors', () => {
     expect(error).toBeInstanceOf(Error);
     expect(error.name).toBe('InvalidCredentialsError');
     expect(error.message).toBe('invalid credentials');
+  });
+
+  it('should use the fixed message in a CannotDisableSelfError', () => {
+    const error = new CannotDisableSelfError();
+
+    expect(error).toBeInstanceOf(CannotDisableSelfError);
+    expect(error).toBeInstanceOf(Error);
+    expect(error.name).toBe('CannotDisableSelfError');
+    expect(error.message).toBe('an admin cannot disable their own account');
+  });
+
+  it('should use the fixed message in a LastActiveAdminError', () => {
+    const error = new LastActiveAdminError();
+
+    expect(error).toBeInstanceOf(LastActiveAdminError);
+    expect(error).toBeInstanceOf(Error);
+    expect(error.name).toBe('LastActiveAdminError');
+    expect(error.message).toBe('the last active admin cannot be disabled');
   });
 });
 

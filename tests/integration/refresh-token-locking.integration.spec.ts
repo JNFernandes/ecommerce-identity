@@ -59,6 +59,7 @@ describe('RefreshTokenRepository locking (integration)', () => {
     if (found === null) {
       return null;
     }
+    await tx.lockUserForShare(found.userId);
     await tx.lockFamily(found.familyId);
     const locked = await tx.findByHashForUpdate(hash);
     if (locked === null || !locked.isUsable(NOW)) {
@@ -83,6 +84,7 @@ describe('RefreshTokenRepository locking (integration)', () => {
     if (found === null) {
       return 0;
     }
+    await tx.lockUserForShare(found.userId);
     await tx.lockFamily(found.familyId);
     await tx.findByHashForUpdate(hash);
     return tx.revokeFamily(found.familyId, NOW);
@@ -153,6 +155,28 @@ describe('RefreshTokenRepository locking (integration)', () => {
     expect(rotated).not.toBeNull();
     expect(revoked).toBe(1);
     expect(await liveTokens(original.familyId)).toBe(0);
+  });
+
+  it('should make lockUserForShare wait for a transaction holding the user row FOR UPDATE', async () => {
+    const token = await loginToken('share-lock@example.com');
+    const order: string[] = [];
+
+    await Promise.all([
+      dataSource.transaction(async (manager) => {
+        await manager.query('SELECT 1 FROM "users" WHERE "id" = $1 FOR UPDATE', [token.userId]);
+        order.push('row locked');
+        await pause(300);
+        order.push('row released');
+      }),
+      pause(50).then(() =>
+        repository.inTransaction(async (tx) => {
+          await tx.lockUserForShare(token.userId);
+          order.push('share lock taken');
+        }),
+      ),
+    ]);
+
+    expect(order).toEqual(['row locked', 'row released', 'share lock taken']);
   });
 
   it('should leave no live token when a logout races the rotation of the newest token', async () => {

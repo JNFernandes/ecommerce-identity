@@ -59,6 +59,11 @@ class FakeTx implements RefreshTokenTx {
     return Promise.resolve(this.tokens.get(hash) ?? null);
   }
 
+  lockUserForShare(userId: string): Promise<void> {
+    this.calls.push(`lockUserForShare:${userId}`);
+    return Promise.resolve();
+  }
+
   lockFamily(): Promise<void> {
     this.calls.push('lockFamily');
     return Promise.resolve();
@@ -186,10 +191,15 @@ describe('RefreshService', () => {
       });
     });
 
-    it('should take the family lock before locking the token row', async () => {
+    it('should lock the user row, then the family, then the token row', async () => {
       await refresh();
 
-      expect(tx.calls.slice(0, 3)).toEqual(['findByHash', 'lockFamily', 'findByHashForUpdate']);
+      expect(tx.calls.slice(0, 4)).toEqual([
+        'findByHash',
+        `lockUserForShare:${user.id}`,
+        'lockFamily',
+        'findByHashForUpdate',
+      ]);
     });
 
     it('should save the rotation with the successor hash, never the value', async () => {

@@ -1,4 +1,5 @@
 import { Email } from '../../../src/domain/email.value-object';
+import { CannotDisableSelfError } from '../../../src/domain/errors/cannot-disable-self.error';
 import { InvalidCredentialsError } from '../../../src/domain/errors/invalid-credentials.error';
 import { UserRegistered } from '../../../src/domain/events/user-registered.event';
 import { Role } from '../../../src/domain/role.enum';
@@ -182,6 +183,135 @@ describe('User', () => {
       expect(user.canLogin()).toBe(false);
       expect(() => user.recordLogin(loginAt)).toThrow(InvalidCredentialsError);
       expect(user.lastLoginAt).toBeNull();
+    });
+  });
+
+  describe('status changes', () => {
+    const CREATED_AT = new Date('2026-11-01T10:00:00.000Z');
+    const UPDATED_AT = new Date('2026-11-02T10:00:00.000Z');
+    const LAST_LOGIN_AT = new Date('2026-11-03T10:00:00.000Z');
+    const AT = new Date('2026-11-18T12:00:00.000Z');
+    const ADMIN_ID = '00000000-0000-4000-8000-000000000001';
+
+    function stored(status: UserStatus, roles: Role[] = [Role.CUSTOMER]): User {
+      const registered = User.registerCustomer(email, name, HASH);
+      return User.restore({
+        id: registered.id,
+        customerId: roles.includes(Role.CUSTOMER) ? registered.customerId : null,
+        email,
+        name,
+        passwordHash: HASH,
+        roles,
+        status,
+        createdAt: CREATED_AT,
+        updatedAt: UPDATED_AT,
+        lastLoginAt: LAST_LOGIN_AT,
+      });
+    }
+
+    function untouchedFields(user: User): unknown {
+      return {
+        id: user.id,
+        customerId: user.customerId,
+        email: user.email.value,
+        name: user.name.value,
+        passwordHash: user.passwordHash,
+        roles: user.roles,
+        createdAt: user.createdAt,
+        lastLoginAt: user.lastLoginAt,
+      };
+    }
+
+    describe('disable', () => {
+      it('should disable an ACTIVE user, set updatedAt and return true', () => {
+        const user = stored(UserStatus.ACTIVE);
+        const before = untouchedFields(user);
+
+        expect(user.disable(ADMIN_ID, AT)).toBe(true);
+
+        expect(user.status).toBe(UserStatus.DISABLED);
+        expect(user.updatedAt).toEqual(AT);
+        expect(user.canLogin()).toBe(false);
+        expect(untouchedFields(user)).toEqual(before);
+      });
+
+      it('should change nothing and return false for a DISABLED user', () => {
+        const user = stored(UserStatus.DISABLED);
+        const before = untouchedFields(user);
+
+        expect(user.disable(ADMIN_ID, AT)).toBe(false);
+
+        expect(user.status).toBe(UserStatus.DISABLED);
+        expect(user.updatedAt).toEqual(UPDATED_AT);
+        expect(untouchedFields(user)).toEqual(before);
+      });
+
+      it('should refuse an admin disabling their own account', () => {
+        const user = stored(UserStatus.ACTIVE, [Role.ADMIN]);
+
+        expect(() => user.disable(user.id, AT)).toThrow(CannotDisableSelfError);
+        expect(user.status).toBe(UserStatus.ACTIVE);
+        expect(user.updatedAt).toEqual(UPDATED_AT);
+      });
+
+      it('should refuse a self-disable even when the user is already DISABLED', () => {
+        const user = stored(UserStatus.DISABLED, [Role.ADMIN]);
+
+        expect(() => user.disable(user.id, AT)).toThrow(CannotDisableSelfError);
+        expect(user.updatedAt).toEqual(UPDATED_AT);
+      });
+    });
+
+    describe('assertCanBeDisabledBy', () => {
+      it('should throw for the user itself and change nothing', () => {
+        const user = stored(UserStatus.ACTIVE, [Role.ADMIN]);
+
+        expect(() => user.assertCanBeDisabledBy(user.id)).toThrow(CannotDisableSelfError);
+        expect(user.status).toBe(UserStatus.ACTIVE);
+      });
+
+      it('should pass for another admin and change nothing', () => {
+        const user = stored(UserStatus.ACTIVE);
+
+        expect(() => user.assertCanBeDisabledBy(ADMIN_ID)).not.toThrow();
+        expect(user.status).toBe(UserStatus.ACTIVE);
+        expect(user.updatedAt).toEqual(UPDATED_AT);
+      });
+    });
+
+    describe('enable', () => {
+      it('should enable a DISABLED user, set updatedAt and return true', () => {
+        const user = stored(UserStatus.DISABLED);
+        const before = untouchedFields(user);
+
+        expect(user.enable(AT)).toBe(true);
+
+        expect(user.status).toBe(UserStatus.ACTIVE);
+        expect(user.updatedAt).toEqual(AT);
+        expect(user.canLogin()).toBe(true);
+        expect(untouchedFields(user)).toEqual(before);
+      });
+
+      it('should change nothing and return false for an ACTIVE user', () => {
+        const user = stored(UserStatus.ACTIVE);
+        const before = untouchedFields(user);
+
+        expect(user.enable(AT)).toBe(false);
+
+        expect(user.status).toBe(UserStatus.ACTIVE);
+        expect(user.updatedAt).toEqual(UPDATED_AT);
+        expect(untouchedFields(user)).toEqual(before);
+      });
+    });
+
+    describe('isActiveAdmin', () => {
+      it.each([
+        ['an ACTIVE admin', UserStatus.ACTIVE, [Role.ADMIN], true],
+        ['a DISABLED admin', UserStatus.DISABLED, [Role.ADMIN], false],
+        ['an ACTIVE customer', UserStatus.ACTIVE, [Role.CUSTOMER], false],
+      ])('should tell whether %s is an active admin', (_label, status, roles, expected) => {
+        expect(stored(status, roles).isActiveAdmin()).toBe(expected);
+      });
     });
   });
 });

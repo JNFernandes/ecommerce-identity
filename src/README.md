@@ -191,7 +191,8 @@ from roles only, never secrets). Stored in `audit_records`, append-only: a trigg
   `pg_advisory_xact_lock(ADMIN_CHANGES_LOCK_KEY)` → acting admin re-read (`ACTIVE` admin or `401`) →
   target `SELECT … FOR UPDATE` (`404`) → `assertCanBeDisabledBy` → for an `ACTIVE` admin target,
   `countActiveAdmins` + `LastActiveAdminPolicy` → `disable` / `enable` → `saveStatus` → (disable)
-  `revokeAllRefreshTokens`. The log line `user status changed: actorId targetId from to
+  `revokeAllRefreshTokens` → `appendAudit(AuditRecord.statusChanged(...))` (`USER_STATUS_CHANGED`,
+  only when the status changed). The log line `user status changed: actorId targetId from to
   revokedTokens` is written after the commit. The advisory lock serializes status changes, so
   crossed disables of two admins cannot deadlock and the admin count is exact.
 - **Refresh lock order** is now `findByHash` → `lockUserForShare` (`SELECT 1 … FOR SHARE` on the

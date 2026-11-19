@@ -50,7 +50,7 @@ recorded in an append-only audit trail readable by admins through `GET /audit` (
 | `GET /users/me` | `CUSTOMER`, `ADMIN` | implemented |
 | `GET /users` | `ADMIN` | implemented |
 | `GET /users/{id}` | `ADMIN` | implemented |
-| `PATCH /users/{id}/status` | `ADMIN` | implemented (audit record: planned) |
+| `PATCH /users/{id}/status` | `ADMIN` | implemented |
 | `POST /users/me/password` | `CUSTOMER`, `ADMIN` | planned |
 | `POST /users` | `ADMIN` | implemented |
 | `PUT /users/{id}/roles` | `ADMIN` | planned |
@@ -100,8 +100,10 @@ with the user after the request, in the `GET /users/{id}` shape.
 - `400` for a malformed id, a missing, unknown or wrongly cased status, an extra field or malformed
   JSON; `404` (`user not found`) for an unknown id; `401` / `403` as for every protected route.
 - Every effective change logs
-  `user status changed: actorId=… targetId=… from=… to=… revokedTokens=N` (ids only). No role is
-  ever changed, no event is published, and the endpoint works with Kafka down.
+  `user status changed: actorId=… targetId=… from=… to=… revokedTokens=N` (ids only) and writes a
+  `USER_STATUS_CHANGED` audit record (actor, target, `before`/`after` status) in the same
+  transaction; a no-op writes neither. No role is ever changed, no event is published, and the
+  endpoint works with Kafka down.
 
 `GET /health` returns `200` with `{ "status": "ok", "database": "up", "kafka": "idle" }` when
 PostgreSQL answers, and `503` when it does not. The `kafka` field (`idle`, `connected`,

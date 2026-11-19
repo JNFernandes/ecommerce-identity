@@ -4,6 +4,7 @@ import { Email } from '../../../src/domain/email.value-object';
 import { Role } from '../../../src/domain/role.enum';
 import { User } from '../../../src/domain/user.aggregate';
 import { UserName } from '../../../src/domain/user-name.value-object';
+import { UserStatus } from '../../../src/domain/user-status.enum';
 
 const AT = new Date('2026-11-19T10:00:00.000Z');
 const ACTOR = '0f8fad5b-d9cb-469f-a165-70867728950e';
@@ -59,5 +60,37 @@ describe('AuditRecord.userCreated', () => {
     expect(AuditRecord.userCreated(ACTOR, user, AT).id).not.toBe(
       AuditRecord.userCreated(ACTOR, user, AT).id,
     );
+  });
+});
+
+describe('AuditRecord.statusChanged', () => {
+  it('should record who changed whose status, from what to what, with the status only', () => {
+    const user = customer();
+    user.disable(ACTOR, AT);
+
+    const record = AuditRecord.statusChanged(ACTOR, user, UserStatus.ACTIVE, AT);
+
+    expect(record.actorId).toBe(ACTOR);
+    expect(record.action).toBe(AuditAction.USER_STATUS_CHANGED);
+    expect(record.targetId).toBe(user.id);
+    expect(record.before).toEqual({ status: UserStatus.ACTIVE });
+    expect(record.after).toEqual({ status: UserStatus.DISABLED });
+    expect(record.occurredAt).toBe(AT);
+  });
+
+  it('should record an enable as DISABLED to ACTIVE', () => {
+    const user = customer();
+
+    const record = AuditRecord.statusChanged(ACTOR, user, UserStatus.DISABLED, AT);
+
+    expect(record.before).toEqual({ status: UserStatus.DISABLED });
+    expect(record.after).toEqual({ status: UserStatus.ACTIVE });
+  });
+
+  it('should hold nothing but the status', () => {
+    const record = AuditRecord.statusChanged(ACTOR, customer(), UserStatus.DISABLED, AT);
+
+    expect(Object.keys(record.before ?? {})).toEqual(['status']);
+    expect(Object.keys(record.after)).toEqual(['status']);
   });
 });

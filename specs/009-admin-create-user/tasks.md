@@ -92,7 +92,7 @@ No setup tasks: no package or configuration changes (plan "Technical Context").
 
 **Independent test**: 401 / 403 / 401 respectively, nothing written.
 
-- [ ] T014 [US4] Component test `tests/component/users-create-access.component.spec.ts` (PostgreSQL, Kafka unreachable): no token → 401; malformed token → 401; customer token → 403; admin created via `POST /users`, then disabled via `PATCH /users/{id}/status` by the seeded admin, then calls `POST /users` with their still-valid token → generic 401; Swagger (`/docs-json`) lists `POST /users` with bearer auth and 201/400/401/403/409. No user or audit row is written by the refused calls. Commit `test(US-09): only active admins can create users`.
+- [X] T014 [US4] Component test `tests/component/users-create-access.component.spec.ts` (PostgreSQL, Kafka unreachable): no token → 401; malformed token → 401; customer token → 403; admin created via `POST /users`, then disabled via `PATCH /users/{id}/status` by the seeded admin, then calls `POST /users` with their still-valid token → generic 401; Swagger (`/docs-json`) lists `POST /users` with bearer auth and 201/400/401/403/409. No user or audit row is written by the refused calls. Commit `test(US-09): only active admins can create users`.
 
 ---
 

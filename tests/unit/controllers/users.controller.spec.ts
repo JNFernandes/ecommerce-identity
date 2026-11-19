@@ -1,16 +1,19 @@
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { CommandBus, QueryBus } from '@nestjs/cqrs';
 import { UsersController } from '../../../src/controllers/users.controller';
+import { ChangeUserRolesCommand } from '../../../src/commands/change-user-roles.command';
 import { ChangeUserStatusCommand } from '../../../src/commands/change-user-status.command';
 import { CreateUserCommand } from '../../../src/commands/create-user.command';
 import { AuthenticatedPrincipal } from '../../../src/domain/authenticated-principal';
 import { CannotDisableSelfError } from '../../../src/domain/errors/cannot-disable-self.error';
+import { CannotRemoveOwnAdminError } from '../../../src/domain/errors/cannot-remove-own-admin.error';
 import { DuplicateEmailError } from '../../../src/domain/errors/duplicate-email.error';
 import { LastActiveAdminError } from '../../../src/domain/errors/last-active-admin.error';
 import { UserNotFoundError } from '../../../src/domain/errors/user-not-found.error';
 import { UserValidationError } from '../../../src/domain/errors/user-validation.error';
 import { Role } from '../../../src/domain/role.enum';
 import { UserStatus } from '../../../src/domain/user-status.enum';
+import { ChangeUserRolesDto } from '../../../src/dto/change-user-roles.dto';
 import { ChangeUserStatusDto } from '../../../src/dto/change-user-status.dto';
 import { CreateUserDto } from '../../../src/dto/create-user.dto';
 import { CurrentUserResponseDto } from '../../../src/dto/current-user-response.dto';
@@ -223,6 +226,71 @@ describe('UsersController', () => {
       ).rejects.toBe(failure);
     });
   });
+  describe('changeRoles', () => {
+    const ADMIN_ID = '0b9e8c7d-6a5f-4e3d-8c2b-1a0f9e8d7c6b';
+    const admin = AuthenticatedPrincipal.fromClaims({ sub: ADMIN_ID, roles: ['ADMIN'] });
+    const updated: UserSummaryReadModel = {
+      id: USER_ID,
+      customerId: '7a2d3b0f-9e54-4c1a-8b8f-3d6e2f4a5b6c',
+      email: 'ana@example.com',
+      name: 'Ana',
+      roles: [Role.CUSTOMER, Role.ADMIN],
+      status: UserStatus.ACTIVE,
+      createdAt: new Date('2026-11-18T10:00:00.000Z'),
+      lastLoginAt: null,
+    };
+
+    function controllerWith(execute: jest.Mock): UsersController {
+      return new UsersController({} as QueryBus, { execute } as unknown as CommandBus);
+    }
+
+    const dto = (roles: Role[]): ChangeUserRolesDto =>
+      Object.assign(new ChangeUserRolesDto(), { roles });
+
+    it('should dispatch ChangeUserRolesCommand with the principal id and return the DTO', async () => {
+      const execute = jest.fn().mockResolvedValue(updated);
+
+      const response = await controllerWith(execute).changeRoles(
+        USER_ID,
+        dto([Role.CUSTOMER, Role.ADMIN]),
+        admin,
+      );
+
+      expect(execute).toHaveBeenCalledWith(
+        new ChangeUserRolesCommand(USER_ID, [Role.CUSTOMER, Role.ADMIN], ADMIN_ID),
+      );
+      expect(response).toEqual(UserSummaryResponseDto.from(updated));
+    });
+
+    it.each([
+      [new UserValidationError('bad roles'), BadRequestException],
+      [new UserNotFoundError(), NotFoundException],
+      [new CannotRemoveOwnAdminError(), ConflictException],
+      [
+        new LastActiveAdminError('the last active admin cannot lose the ADMIN role'),
+        ConflictException,
+      ],
+    ])('should map %p to %p with its message', async (failure, expected) => {
+      const execute = jest.fn().mockRejectedValue(failure);
+
+      const error: unknown = await controllerWith(execute)
+        .changeRoles(USER_ID, dto([Role.CUSTOMER]), admin)
+        .catch((caught: unknown) => caught);
+
+      expect(error).toBeInstanceOf(expected);
+      expect((error as Error).message).toBe(failure.message);
+    });
+
+    it('should propagate any other error unchanged', async () => {
+      const failure = new Error('connection refused');
+      const execute = jest.fn().mockRejectedValue(failure);
+
+      await expect(
+        controllerWith(execute).changeRoles(USER_ID, dto([Role.ADMIN]), admin),
+      ).rejects.toBe(failure);
+    });
+  });
+
   describe('create', () => {
     const admin = AuthenticatedPrincipal.fromClaims({ sub: USER_ID, roles: ['ADMIN'] });
     const created: UserSummaryReadModel = {

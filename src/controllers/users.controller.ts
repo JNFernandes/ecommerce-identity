@@ -10,6 +10,7 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Put,
   Query,
 } from '@nestjs/common';
 import { CommandBus, QueryBus } from '@nestjs/cqrs';
@@ -23,15 +24,18 @@ import {
   ApiParam,
   ApiTags,
 } from '@nestjs/swagger';
+import { ChangeUserRolesCommand } from '../commands/change-user-roles.command';
 import { ChangeUserStatusCommand } from '../commands/change-user-status.command';
 import { CreateUserCommand } from '../commands/create-user.command';
 import { AuthenticatedPrincipal } from '../domain/authenticated-principal';
 import { CannotDisableSelfError } from '../domain/errors/cannot-disable-self.error';
+import { CannotRemoveOwnAdminError } from '../domain/errors/cannot-remove-own-admin.error';
 import { DuplicateEmailError } from '../domain/errors/duplicate-email.error';
 import { LastActiveAdminError } from '../domain/errors/last-active-admin.error';
 import { UserNotFoundError } from '../domain/errors/user-not-found.error';
 import { UserValidationError } from '../domain/errors/user-validation.error';
 import { Role } from '../domain/role.enum';
+import { ChangeUserRolesDto } from '../dto/change-user-roles.dto';
 import { ChangeUserStatusDto } from '../dto/change-user-status.dto';
 import { CreateUserDto } from '../dto/create-user.dto';
 import { CurrentUserResponseDto } from '../dto/current-user-response.dto';
@@ -52,7 +56,7 @@ import { Roles } from './auth/roles.decorator';
 export class UsersController {
   /**
    * @param queryBus Dispatches the read queries.
-   * @param commandBus Dispatches the status change and user creation commands.
+   * @param commandBus Dispatches the status change, role change and user creation commands.
    */
   constructor(
     private readonly queryBus: QueryBus,
@@ -186,6 +190,70 @@ export class UsersController {
         throw new NotFoundException(error.message);
       }
       if (error instanceof CannotDisableSelfError || error instanceof LastActiveAdminError) {
+        throw new ConflictException(error.message);
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Replaces a user's roles for admins. Removing any role revokes every refresh token of the user in
+   * the same transaction; granting revokes none. A first `CUSTOMER` grant creates a `customerId` and
+   * publishes `identity.user-registered` after the commit. Sending the current roles is a no-op that
+   * still returns 200. Every effective change is audited in the same transaction.
+   *
+   * @param id The user id; a malformed id is rejected with 400 by `ParseUUIDPipe`.
+   * @param dto The requested roles, already validated.
+   * @param principal The acting admin.
+   * @throws BadRequestException When the roles are invalid (domain check behind the DTO).
+   * @throws NotFoundException When no user has this id.
+   * @throws ConflictException When the admin removes their own `ADMIN` role, or the target is the
+   * last active admin and would lose `ADMIN`.
+   */
+  @Put(':id/roles')
+  @Roles(Role.ADMIN)
+  @HttpCode(200)
+  @ApiOperation({
+    summary: "Replace a user's roles",
+    description:
+      'Admins only. The list replaces the roles; `["CUSTOMER", "ADMIN"]` is allowed. Removing a ' +
+      'role revokes every refresh token of the user; access tokens already issued keep their old ' +
+      'roles until they expire. Granting revokes nothing. A first `CUSTOMER` grant creates a ' +
+      '`customerId` and publishes `identity.user-registered`; removing `CUSTOMER` keeps the ' +
+      '`customerId` (dormant: never put in a token). Sending the current roles changes nothing. ' +
+      'An admin cannot remove their own `ADMIN` role, and the last active admin cannot lose it.',
+  })
+  @ApiParam({ name: 'id', format: 'uuid', description: 'User id' })
+  @ApiOkResponse({ type: UserSummaryResponseDto, description: 'The user after the request' })
+  @ApiBadRequestResponse({
+    description:
+      '`id` is not a UUID, `roles` is missing, empty, repeats a role or holds an unknown one, an ' +
+      'unknown field was sent, or the body is not valid JSON',
+  })
+  @ApiNotFoundResponse({ description: 'No user has this id' })
+  @ApiConflictResponse({
+    description:
+      'The admin removes their own ADMIN role, or the target is the last active admin and would ' +
+      'lose ADMIN',
+  })
+  async changeRoles(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: ChangeUserRolesDto,
+    @CurrentUser() principal: AuthenticatedPrincipal,
+  ): Promise<UserSummaryResponseDto> {
+    try {
+      const user = await this.commandBus.execute<ChangeUserRolesCommand, UserSummaryReadModel>(
+        new ChangeUserRolesCommand(id, dto.roles, principal.userId),
+      );
+      return UserSummaryResponseDto.from(user);
+    } catch (error) {
+      if (error instanceof UserValidationError) {
+        throw new BadRequestException(error.message);
+      }
+      if (error instanceof UserNotFoundError) {
+        throw new NotFoundException(error.message);
+      }
+      if (error instanceof CannotRemoveOwnAdminError || error instanceof LastActiveAdminError) {
         throw new ConflictException(error.message);
       }
       throw error;

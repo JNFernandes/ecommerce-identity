@@ -24,3 +24,4 @@ requires (Documentation Standards).
 | [0006](0006-status-changes-serialized-and-sessions-revoked.md) | Status changes are serialized; disabling revokes sessions; access tokens expire naturally | Accepted |
 | [0007](0007-outbound-retry-per-row-skip-locked.md) | Outbound retry claims one row per transaction with SKIP LOCKED | Accepted |
 | [0008](0008-admin-creation-and-role-changes-through-the-api.md) | Admins create users and change roles through the API, with audit | Accepted |
+| [0009](0009-append-only-audit-table.md) | Audit records in an append-only table guarded by a trigger | Accepted |

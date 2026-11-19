@@ -111,7 +111,7 @@ No setup tasks: no package or configuration changes (plan "Technical Context").
 ## Phase 8: Polish & cross-cutting
 
 - [X] T016 [P] Docs in this repo: `README.md` (endpoint row `POST /users` → implemented; Roles section wording without "planned" for `POST /users`; new `### POST /users` section from the contract, one-role rule, audit, the "change your password" advice), `src/README.md` (create-user flow and folders `domain/audit/`), JSDoc of `src/domain/role.enum.ts` (admins come from the seed or `POST /users`) and of `src/domain/events/user-registered.event.ts` (also raised for customers created by an admin). Commit `docs(US-09): document admin user creation`.
-- [ ] T017 [P] Add `docs/adr/0009-append-only-audit-table.md` from `docs/adr/template.md` ("Audit records in an append-only table guarded by a trigger": R1–R4, rejected log-only and enum/FK options) and index it in `docs/adr/README.md`. Commit `docs(US-09): add ADR 0009 on the audit table`.
+- [X] T017 [P] Add `docs/adr/0009-append-only-audit-table.md` from `docs/adr/template.md` ("Audit records in an append-only table guarded by a trigger": R1–R4, rejected log-only and enum/FK options) and index it in `docs/adr/README.md`. Commit `docs(US-09): add ADR 0009 on the audit table`.
 - [ ] T018 [P] In `../ecommerce-infra/docs/events.md`, `identity.user-registered`: also published when an admin creates a customer through `POST /users` on Identity; payload unchanged. Commit in `ecommerce-infra` on a `docs/` branch from its `main` and push it (the user opens the PR).
 - [ ] T019 Run `specs/009-admin-create-user/quickstart.md` manually against the local stack and record the results (date, pass/fail per step) at the end of the quickstart. Commit `docs(US-09): record the manual quickstart run`.
 

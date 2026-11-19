@@ -37,6 +37,14 @@ const VARIABLES = [
   'ADMIN_EMAIL',
   'ADMIN_PASSWORD',
   'ADMIN_NAME',
+  'OUTBOUND_RETRY_ENABLED',
+  'OUTBOUND_RETRY_INTERVAL_MS',
+  'OUTBOUND_RETRY_BATCH_SIZE',
+  'OUTBOUND_RETRY_MAX_ATTEMPTS',
+  'OUTBOUND_RETRY_BASE_DELAY_MS',
+  'OUTBOUND_RETRY_MULTIPLIER',
+  'OUTBOUND_RETRY_MAX_DELAY_MS',
+  'OUTBOUND_RETRY_SHUTDOWN_TIMEOUT_MS',
 ];
 
 describe('configuration', () => {
@@ -312,6 +320,78 @@ describe('configuration', () => {
       process.env.ADMIN_PASSWORD = '  spaced password  ';
 
       expect(configuration().admin.password).toBe('  spaced password  ');
+    });
+  });
+
+  describe('outboundRetry', () => {
+    it('should use the documented defaults when nothing is set', () => {
+      expect(configuration().outboundRetry).toEqual({
+        enabled: true,
+        intervalMs: 30000,
+        batchSize: 20,
+        maxAttempts: 10,
+        baseDelayMs: 5000,
+        multiplier: 2,
+        maxDelayMs: 300000,
+        shutdownTimeoutMs: 10000,
+      });
+    });
+
+    it('should read every setting from the environment', () => {
+      process.env.OUTBOUND_RETRY_ENABLED = 'false';
+      process.env.OUTBOUND_RETRY_INTERVAL_MS = '5000';
+      process.env.OUTBOUND_RETRY_BATCH_SIZE = '3';
+      process.env.OUTBOUND_RETRY_MAX_ATTEMPTS = '1';
+      process.env.OUTBOUND_RETRY_BASE_DELAY_MS = '1000';
+      process.env.OUTBOUND_RETRY_MULTIPLIER = '1.5';
+      process.env.OUTBOUND_RETRY_MAX_DELAY_MS = '1000';
+      process.env.OUTBOUND_RETRY_SHUTDOWN_TIMEOUT_MS = '2000';
+
+      expect(configuration().outboundRetry).toEqual({
+        enabled: false,
+        intervalMs: 5000,
+        batchSize: 3,
+        maxAttempts: 1,
+        baseDelayMs: 1000,
+        multiplier: 1.5,
+        maxDelayMs: 1000,
+        shutdownTimeoutMs: 2000,
+      });
+    });
+
+    it('should keep the worker enabled for any value other than "false"', () => {
+      process.env.OUTBOUND_RETRY_ENABLED = 'true';
+
+      expect(configuration().outboundRetry.enabled).toBe(true);
+    });
+
+    it.each([
+      'OUTBOUND_RETRY_INTERVAL_MS',
+      'OUTBOUND_RETRY_BATCH_SIZE',
+      'OUTBOUND_RETRY_MAX_ATTEMPTS',
+      'OUTBOUND_RETRY_BASE_DELAY_MS',
+      'OUTBOUND_RETRY_MAX_DELAY_MS',
+      'OUTBOUND_RETRY_SHUTDOWN_TIMEOUT_MS',
+    ])('should reject invalid values of %s naming the variable', (name) => {
+      for (const raw of ['0', '-1', 'abc', '1.5']) {
+        process.env[name] = raw;
+        expect(() => configuration()).toThrow(`${name} must be a positive integer`);
+      }
+    });
+
+    it.each(['0.5', '0', '-2', 'abc'])('should reject a multiplier of %p', (raw) => {
+      process.env.OUTBOUND_RETRY_MULTIPLIER = raw;
+
+      expect(() => configuration()).toThrow('OUTBOUND_RETRY_MULTIPLIER must be a number >= 1');
+    });
+
+    it('should reject a maximum delay smaller than the base delay', () => {
+      process.env.OUTBOUND_RETRY_BASE_DELAY_MS = '5000';
+      process.env.OUTBOUND_RETRY_MAX_DELAY_MS = '4999';
+
+      expect(() => configuration()).toThrow(
+        'OUTBOUND_RETRY_MAX_DELAY_MS must be >= OUTBOUND_RETRY_BASE_DELAY_MS',
+      );
     });
   });
 

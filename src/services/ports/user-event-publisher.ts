@@ -12,4 +12,15 @@ export abstract class UserEventPublisher {
    * @throws Error When the broker is unreachable or the send fails.
    */
   abstract publishUserRegistered(event: UserRegistered): Promise<void>;
+
+  /**
+   * Redelivers a stored event exactly as it was stored: same topic, same key, same payload (and so
+   * the same `eventId`). Used by the outbound retry worker.
+   *
+   * @param topic The stored topic.
+   * @param key The stored message key, sent unchanged.
+   * @param payload The stored message value.
+   * @throws Error When the broker is unreachable or the send fails.
+   */
+  abstract republish(topic: string, key: string, payload: Record<string, unknown>): Promise<void>;
 }

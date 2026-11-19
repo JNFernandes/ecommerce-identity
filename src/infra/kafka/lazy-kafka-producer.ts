@@ -43,10 +43,23 @@ export class LazyKafkaProducer implements OnApplicationShutdown {
    * Rejects when Kafka cannot be reached or the send fails.
    */
   async publish(topic: string, event: EventEnvelope): Promise<void> {
+    await this.publishRaw(topic, event.aggregateId, event);
+  }
+
+  /**
+   * Publishes an already-built message as is: `value` serialized as JSON, `key` sent unchanged.
+   * Used to redeliver a stored event without re-deriving its key or rebuilding its payload.
+   * Same lazy connection as `publish`; rejects when Kafka cannot be reached or the send fails.
+   *
+   * @param topic Destination topic.
+   * @param key Message key, sent unchanged.
+   * @param value Message value, serialized as JSON.
+   */
+  async publishRaw(topic: string, key: string, value: object): Promise<void> {
     await this.connect();
     await this.producer.send({
       topic,
-      messages: [{ key: event.aggregateId, value: JSON.stringify(event) }],
+      messages: [{ key, value: JSON.stringify(value) }],
     });
   }
 

@@ -19,6 +19,10 @@ export interface UserRegisteredData {
  * `identity.user-registered` after the user row is committed, keyed by `aggregateId`; a failed
  * publish is dead-lettered and retried with the same `eventId` (at-least-once delivery).
  *
+ * Redelivery (outbound retry worker, ADR 0007): the stored key and payload are sent unchanged, so
+ * a consumer may receive the same `eventId` more than once and MUST deduplicate on it. The JSON
+ * field order of a redelivered message may differ; the fields and values do not.
+ *
  * Payload (JSON, exactly these fields, documented in `ecommerce-infra/docs/events.md`):
  *
  * | Field         | Type     | Notes                                  |

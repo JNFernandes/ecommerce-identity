@@ -274,8 +274,24 @@ Envelope: `eventId`, `aggregateId` (the user id, also the message key), `occurre
 Orders creates its customer record from this event
 ([ADR 0004](docs/adr/0004-user-registered-event-choreography.md)). If the publish fails, the
 registration still succeeds: the failure is logged and the event is stored in
-`outbound_dead_letters` (`PENDING_RETRY`) to be republished with the same `eventId` by the retry
-worker (a later story).
+`outbound_dead_letters` (`PENDING_RETRY`).
+
+**Outbound retry worker.** Every instance runs a timer (`OUTBOUND_RETRY_INTERVAL_MS`) that
+republishes due `PENDING_RETRY` rows of `identity.user-registered`, up to
+`OUTBOUND_RETRY_BATCH_SIZE` per run, oldest first. Each row is claimed in its own transaction with
+`FOR UPDATE SKIP LOCKED`, so instances never process the same row
+([ADR 0007](docs/adr/0007-outbound-retry-per-row-skip-locked.md)).
+
+- The stored topic, key and payload are sent unchanged, so the `eventId` is the original one.
+  Delivery is **at-least-once**: a consumer may receive the same `eventId` twice and must
+  deduplicate on it.
+- Success → `RESOLVED`. Failure → retried after
+  `min(BASE_DELAY_MS × MULTIPLIER^(attempt − 1), MAX_DELAY_MS)` (defaults: 5, 10, 20, 40, 80, 160,
+  then 300 s). After `OUTBOUND_RETRY_MAX_ATTEMPTS` attempts, or at once for a malformed payload
+  → `EXHAUSTED`, logged at error level and kept for manual inspection. Final rows are never retried.
+- The worker never delays startup or affects `/health` or registration. On shutdown it stops
+  claiming rows and waits up to `OUTBOUND_RETRY_SHUTDOWN_TIMEOUT_MS`; unfinished rows stay due.
+- Logs carry row id, `eventId`, topic, key, counts and errors, never the payload.
 
 ## Prerequisites
 
@@ -363,6 +379,14 @@ The RS256 private key is read from `JWT_PRIVATE_KEY_PATH` and is **never committ
 | `KAFKA_CLIENT_ID` | `ecommerce-identity` | Kafka client id |
 | `KAFKA_CONNECTION_TIMEOUT_MS` | `1000` | Broker connection timeout; bounds publish latency when Kafka is down |
 | `KAFKA_PRODUCER_RETRIES` | `1` | Producer connect/send retries before giving up |
+| `OUTBOUND_RETRY_ENABLED` | `true` | Run the outbound retry worker; `false` disables it |
+| `OUTBOUND_RETRY_INTERVAL_MS` | `30000` | Pause between retry runs, in ms (integer ≥ 1) |
+| `OUTBOUND_RETRY_BATCH_SIZE` | `20` | Rows attempted per run (integer ≥ 1) |
+| `OUTBOUND_RETRY_MAX_ATTEMPTS` | `10` | Attempts before a row is `EXHAUSTED` (integer ≥ 1) |
+| `OUTBOUND_RETRY_BASE_DELAY_MS` | `5000` | Delay after the first failed attempt, in ms (integer ≥ 1) |
+| `OUTBOUND_RETRY_MULTIPLIER` | `2` | Delay growth per failed attempt (number ≥ 1) |
+| `OUTBOUND_RETRY_MAX_DELAY_MS` | `300000` | Maximum delay, in ms (integer ≥ base delay) |
+| `OUTBOUND_RETRY_SHUTDOWN_TIMEOUT_MS` | `10000` | How long shutdown waits for a run in progress, in ms (integer ≥ 1) |
 | `ARGON2_MEMORY_COST_KIB` | `65536` | argon2id memory cost (KiB) for password hashes |
 | `ARGON2_TIME_COST` | `3` | argon2id iterations |
 | `ARGON2_PARALLELISM` | `4` | argon2id parallelism |
@@ -421,6 +445,7 @@ src/
   infra/
     database/      TypeORM options, CLI data source, migrations
     kafka/         Kafka module, lazily connecting producer, UserEventsProducer
+    outbound/      DeadLetterRetryWorker (timer of the outbound retry worker)
     security/      Argon2PasswordHasher (argon2id)
   app.module.ts, app.setup.ts (CORS, ValidationPipe), app.swagger.ts, main.ts
 tests/

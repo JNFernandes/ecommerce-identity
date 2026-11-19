@@ -40,7 +40,7 @@ describe('RegisterCustomerService', () => {
     service = new RegisterCustomerService(
       { hash, verify: jest.fn(), dummyHash: jest.fn() } as PasswordHasher,
       { save } as unknown as UserRepository,
-      { publishUserRegistered } as UserEventPublisher,
+      { publishUserRegistered, republish: jest.fn() } as UserEventPublisher,
       { recordFailure } as unknown as OutboundDeadLetterRepository,
     );
   });

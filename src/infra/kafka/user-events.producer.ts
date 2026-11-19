@@ -27,6 +27,19 @@ export class UserEventsProducer extends UserEventPublisher {
   }
 
   /**
+   * Redelivers a stored message through `LazyKafkaProducer.publishRaw`: the key is not re-derived
+   * and the payload is not rebuilt, so the `eventId` is unchanged.
+   *
+   * @param topic The stored topic.
+   * @param key The stored message key.
+   * @param payload The stored message value.
+   * @throws Error When Kafka cannot be reached or the send fails.
+   */
+  async republish(topic: string, key: string, payload: Record<string, unknown>): Promise<void> {
+    await this.producer.publishRaw(topic, key, payload);
+  }
+
+  /**
    * The exact message value for a `UserRegistered` event (the contract fields, nothing else).
    *
    * @param event The event to serialize.

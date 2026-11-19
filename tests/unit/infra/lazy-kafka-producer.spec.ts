@@ -86,6 +86,43 @@ describe('LazyKafkaProducer', () => {
     await expect(producer.publish(TOPIC, event)).rejects.toThrow('send failed');
   });
 
+  describe('publishRaw', () => {
+    const KEY = 'stored-key';
+    const VALUE = { eventId: event.eventId, nested: { a: 1 }, list: ['x'] };
+
+    it('should connect lazily and send the exact topic, key and JSON value', async () => {
+      expect(connect).not.toHaveBeenCalled();
+
+      await producer.publishRaw(TOPIC, KEY, VALUE);
+
+      expect(connect).toHaveBeenCalledTimes(1);
+      expect(send).toHaveBeenCalledWith({
+        topic: TOPIC,
+        messages: [{ key: KEY, value: JSON.stringify(VALUE) }],
+      });
+    });
+
+    it('should reuse the connection made by publish', async () => {
+      await producer.publish(TOPIC, event);
+      await producer.publishRaw(TOPIC, KEY, VALUE);
+
+      expect(connect).toHaveBeenCalledTimes(1);
+    });
+
+    it('should reject when the connection fails, without sending', async () => {
+      connect.mockRejectedValueOnce(new Error('broker down'));
+
+      await expect(producer.publishRaw(TOPIC, KEY, VALUE)).rejects.toThrow('broker down');
+      expect(send).not.toHaveBeenCalled();
+    });
+
+    it('should reject when the send fails', async () => {
+      send.mockRejectedValue(new Error('send failed'));
+
+      await expect(producer.publishRaw(TOPIC, KEY, VALUE)).rejects.toThrow('send failed');
+    });
+  });
+
   it('should not disconnect on shutdown when it never connected', async () => {
     await producer.onApplicationShutdown();
 

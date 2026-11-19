@@ -139,6 +139,32 @@ export interface AdminSeedConfig {
   name: string;
 }
 
+/**
+ * Outbound dead-letter retry worker settings (`OUTBOUND_RETRY_*`). Invalid values fail startup
+ * with a message naming the variable.
+ */
+export interface OutboundRetryConfig {
+  /** Run the worker (`OUTBOUND_RETRY_ENABLED`, on unless "false"). */
+  enabled: boolean;
+  /** Pause in ms between the end of one run and the start of the next (`OUTBOUND_RETRY_INTERVAL_MS`, default 30000). */
+  intervalMs: number;
+  /** Maximum rows attempted per run (`OUTBOUND_RETRY_BATCH_SIZE`, default 20). */
+  batchSize: number;
+  /** Attempts after which a row is `EXHAUSTED` (`OUTBOUND_RETRY_MAX_ATTEMPTS`, default 10). */
+  maxAttempts: number;
+  /** Delay in ms after the first failed attempt (`OUTBOUND_RETRY_BASE_DELAY_MS`, default 5000). */
+  baseDelayMs: number;
+  /** Factor applied to the delay after each failed attempt (`OUTBOUND_RETRY_MULTIPLIER`, default 2, >= 1). */
+  multiplier: number;
+  /** Upper bound of the delay in ms (`OUTBOUND_RETRY_MAX_DELAY_MS`, default 300000, >= base delay). */
+  maxDelayMs: number;
+  /**
+   * How long shutdown waits in ms for a run in progress (`OUTBOUND_RETRY_SHUTDOWN_TIMEOUT_MS`,
+   * default 10000). Rows not finalised by then are left due.
+   */
+  shutdownTimeoutMs: number;
+}
+
 /** Default display name of the seeded administrator. */
 export const DEFAULT_ADMIN_NAME = 'Administrator';
 
@@ -154,6 +180,7 @@ export interface AppConfig {
   argon2: Argon2Config;
   rateLimit: RateLimitConfig;
   admin: AdminSeedConfig;
+  outboundRetry: OutboundRetryConfig;
 }
 
 /** Default HTTP port. */
@@ -249,6 +276,72 @@ function readJwtConfig(): JwtConfig {
   };
 }
 
+/**
+ * Parses a strict positive integer setting: unset or empty yields `fallback`.
+ *
+ * @throws Error `"<name> must be a positive integer"` for zero, a negative, decimal or non-numeric value.
+ */
+function parsePositiveInteger(raw: string | undefined, fallback: number, name: string): number {
+  const value = optional(raw);
+  if (value === undefined) {
+    return fallback;
+  }
+  const parsed = Number(value);
+  if (!/^\d+$/.test(value) || !Number.isSafeInteger(parsed) || parsed < 1) {
+    throw new Error(`${name} must be a positive integer`);
+  }
+  return parsed;
+}
+
+/**
+ * Reads the outbound retry worker settings.
+ *
+ * @throws Error naming the variable when a value is invalid or the maximum delay is below the base delay.
+ */
+function readOutboundRetryConfig(): OutboundRetryConfig {
+  const env = process.env;
+  const rawMultiplier = optional(env.OUTBOUND_RETRY_MULTIPLIER);
+  const multiplier = rawMultiplier === undefined ? 2 : Number(rawMultiplier);
+  if (!Number.isFinite(multiplier) || multiplier < 1) {
+    throw new Error('OUTBOUND_RETRY_MULTIPLIER must be a number >= 1');
+  }
+  const baseDelayMs = parsePositiveInteger(
+    env.OUTBOUND_RETRY_BASE_DELAY_MS,
+    5000,
+    'OUTBOUND_RETRY_BASE_DELAY_MS',
+  );
+  const maxDelayMs = parsePositiveInteger(
+    env.OUTBOUND_RETRY_MAX_DELAY_MS,
+    300000,
+    'OUTBOUND_RETRY_MAX_DELAY_MS',
+  );
+  if (maxDelayMs < baseDelayMs) {
+    throw new Error('OUTBOUND_RETRY_MAX_DELAY_MS must be >= OUTBOUND_RETRY_BASE_DELAY_MS');
+  }
+  return {
+    enabled: env.OUTBOUND_RETRY_ENABLED !== 'false',
+    intervalMs: parsePositiveInteger(
+      env.OUTBOUND_RETRY_INTERVAL_MS,
+      30000,
+      'OUTBOUND_RETRY_INTERVAL_MS',
+    ),
+    batchSize: parsePositiveInteger(env.OUTBOUND_RETRY_BATCH_SIZE, 20, 'OUTBOUND_RETRY_BATCH_SIZE'),
+    maxAttempts: parsePositiveInteger(
+      env.OUTBOUND_RETRY_MAX_ATTEMPTS,
+      10,
+      'OUTBOUND_RETRY_MAX_ATTEMPTS',
+    ),
+    baseDelayMs,
+    multiplier,
+    maxDelayMs,
+    shutdownTimeoutMs: parsePositiveInteger(
+      env.OUTBOUND_RETRY_SHUTDOWN_TIMEOUT_MS,
+      10000,
+      'OUTBOUND_RETRY_SHUTDOWN_TIMEOUT_MS',
+    ),
+  };
+}
+
 /** Reads the admin seed settings; the password is kept verbatim, only an empty value is unset. */
 function readAdminSeedConfig(): AdminSeedConfig {
   const password = process.env.ADMIN_PASSWORD;
@@ -307,4 +400,5 @@ export default (): AppConfig => ({
     },
   },
   admin: readAdminSeedConfig(),
+  outboundRetry: readOutboundRetryConfig(),
 });

@@ -1,6 +1,6 @@
 # 0003. Admins only from a startup seed; no role-change endpoint
 
-- **Status**: Accepted
+- **Status**: Superseded by [0008](0008-admin-creation-and-role-changes-through-the-api.md)
 - **Date**: 2026-11-17
 
 ## Context

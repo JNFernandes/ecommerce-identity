@@ -71,7 +71,19 @@ warning (`--max-warnings 0`), or a formatting violation. Never mark a task compl
 - Refresh tokens: opaque, ≥256 bits, stored hashed, single use, rotated; reuse revokes the family.
 - Rate limit register and login. Never log tokens, passwords or `Authorization` headers.
 - CORS only from `CORS_ALLOWED_ORIGINS`. Every non-public endpoint declares its roles.
-- No endpoint changes a role; admins come only from the startup seed.
+- Admins come from the startup seed or from `POST /users` by an admin; registration always creates
+  a `CUSTOMER`. Roles change only through `PUT /users/{id}/roles` by an admin: no self-service, no
+  self-removal of `ADMIN`, and the last `ACTIVE` admin never loses `ADMIN` or gets disabled.
+- Password change (`POST /users/me/password`): current password required, registration policy,
+  revokes the user's other sessions. Admin-supplied passwords follow the same policy and are never
+  logged, returned or audited.
+
+## Audit
+
+Every admin mutation (user creation, role change, status change) writes an append-only audit record
+(`actorId`, `action`, `targetId`, `before`, `after`, timestamp) **in the same transaction** as the
+change. Never update or delete audit rows; never put passwords, hashes or tokens in them. Read only
+by `ADMIN` through `GET /audit`.
 
 ## Write flow
 
@@ -82,7 +94,7 @@ gets success.
 
 ## Out of scope (unless the constitution is amended)
 
-Email verification, password reset, social login, MFA, profile editing, role changes via the API.
+Email verification, password reset (forgotten-password flow), social login, MFA, profile editing.
 
 ## Branches and commits
 

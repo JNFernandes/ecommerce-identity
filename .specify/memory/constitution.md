@@ -1,6 +1,69 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+Version change:    1.0.0 → 1.1.0 (2026-11-19)
+Bump rationale:    MINOR, as requested by the maintainer: a new principle (XI. Auditability) is
+                   added and Principle III is materially expanded (role changes and admin creation
+                   through the API, password change). Note: the policy below lists "redefinition of
+                   an existing principle" as MAJOR, and the rule "no endpoint may change a user's
+                   role" is replaced, not only extended. The maintainer chose MINOR because no
+                   existing behaviour is removed or broken: every current endpoint keeps working
+                   and the change only adds capabilities.
+
+Modified principles:
+  - I. Domain-Driven Design & Layered Architecture — `AuditRecord` added (append-only).
+  - II. Security First — new "Password change" and "Admin-created users" rules.
+  - III. Authorization & Roles — "No endpoint may change a user's role" replaced: roles change only
+    through `PUT /users/{id}/roles` by an `ADMIN`; never self-service; a user cannot remove their
+    own `ADMIN` role; the last `ACTIVE` admin can never lose `ADMIN` or be disabled. `ADMIN` users
+    come from the startup seed or from `POST /users` by an `ADMIN`. Endpoint table: added
+    `POST /users`, `PUT /users/{id}/roles`, `GET /audit`, `POST /users/me/password`, and the
+    already implemented `GET /users/{id}` (missing from 1.0.0).
+  - IV. Write Flow Integrity — audit record written in the same transaction as the change.
+  - VI. Test Coverage — password change, role-change rules and audit atomicity added to the
+    security-critical tests.
+
+Added sections:
+  - XI. Auditability
+
+Removed sections:
+  - Out of Scope: "Changing roles through the API" removed. "Password reset" clarified as the
+    forgotten-password flow (changing one's own password with the current one is in scope).
+
+Templates reviewed:
+  ✅ .specify/templates/plan-template.md  — Constitution Check gates derive from this file at runtime; no static change needed.
+  ✅ .specify/templates/spec-template.md  — Generic structure; no mandatory section added or removed.
+  ✅ .specify/templates/tasks-template.md — Phase/story structure compatible; audit tests fit existing test tasks.
+  ✅ .specify/templates/commands/*.md     — Directory not present in this project; nothing to update.
+
+Runtime guidance:
+  ✅ CLAUDE.md — security, write flow and out-of-scope bullets updated.
+  ✅ README.md — roles, endpoints (planned rows) and admin seed wording updated.
+  ✅ docs/adr/0008-admin-creation-and-role-changes-through-the-api.md — added; supersedes 0003.
+     (The request named ADR 0005, but 0005 is "Default-deny route guards" and ADR numbers are
+     never reused; 0008 is the next free number.)
+  ✅ docs/adr/0003-admin-seed-and-no-role-change.md — status "Superseded by 0008"; kept.
+  ✅ docs/adr/README.md — index updated.
+  ⚠ src/domain/role.enum.ts — JSDoc still says admins come only from the seed; true until the
+    `POST /users` story lands, update it there.
+
+Migration note (existing code that must change):
+  ⚠ `PATCH /users/{id}/status` (US-07) writes no audit record; it violates XI until a follow-up
+    story adds one in the same transaction.
+
+Deferred TODOs (to settle in the specs of the stories that implement them):
+  - TODO(ADMIN_CREATED_CUSTOMER): whether `POST /users` may create a `CUSTOMER` and, if so, that it
+    gets a `customerId` and publishes `identity.user-registered` like registration.
+  - TODO(ROLE_CHANGE_CUSTOMER_ID): what happens to `customerId` when a role set gains or loses
+    `CUSTOMER`, and whether a role change raises an event.
+  - TODO(CURRENT_SESSION): how "all other sessions" is determined on password change (the access
+    token carries no refresh-token family).
+  - TODO(PASSWORD_CHANGE_RATE_LIMIT): `POST /users/me/password` checks a password and is a
+    guessing target; rate limiting it is recommended but not yet required.
+
+=============================================================================================
+Previous report (1.0.0)
+=============================================================================================
 Version change:    (template) → 1.0.0
 Bump rationale:    Initial ratification. The placeholder template is replaced by a full
                    constitution modelled on ecommerce-orders v1.2.0 (structure, wording, section
@@ -67,6 +130,8 @@ Aggregates:
   (`createdAt`, `updatedAt`).
 - `RefreshToken` — `id`, `userId`, `familyId`, `tokenHash`, `expiresAt`, `revokedAt`,
   `replacedBy`.
+- `AuditRecord` — `id`, `actorId`, `action`, `targetId`, `before`, `after`, `occurredAt`;
+  append-only (Principle XI).
 
 The domain event `UserRegistered` is raised by the domain and published by infrastructure.
 Placing business logic in controllers or services is a constitutional violation and MUST be rejected in code review.
@@ -88,6 +153,19 @@ is mandatory.
 - Password checks MUST use constant-time comparison. When the email is unknown, the service MUST
   still perform a hash verification against a dummy hash so that the response time does not
   reveal whether the user exists.
+
+**Password change (`POST /users/me/password`):**
+- The request MUST include the current password; it is verified like a login (argon2id,
+  constant-time) and a wrong current password fails the request without changing anything.
+- The new password MUST satisfy the registration password policy.
+- A successful change MUST revoke every other session of the user (their refresh token families).
+
+**Admin-created users (`POST /users`):**
+- The user gets the password the admin supplies. It MUST satisfy the registration password policy,
+  is stored only as an argon2id hash, and MUST NOT be logged, returned or written to an audit
+  record.
+- Trade-off (documented in the README): the admin knows that password, so the README MUST
+  recommend that the user changes it with `POST /users/me/password` after the first login.
 
 **Access tokens:**
 - Access tokens are JWTs signed with **RS256**. They MUST be short-lived: 15 minutes by default,
@@ -121,11 +199,16 @@ is mandatory.
 
 **Roles:**
 - There are exactly two roles, stored as the `Role` enum: `CUSTOMER` and `ADMIN`.
-- Public registration MUST always create a `CUSTOMER` with a new `customerId`.
-- `ADMIN` users MUST be created only by a startup seed from the `ADMIN_EMAIL` and
-  `ADMIN_PASSWORD` environment variables when no admin exists — never through the API. Admins
-  have no `customerId`.
-- No endpoint may change a user's role.
+- Public registration MUST always create a `CUSTOMER` with a new `customerId`; a role in the
+  request is never honoured.
+- `ADMIN` users MUST be created only (a) by the startup seed from the `ADMIN_EMAIL` and
+  `ADMIN_PASSWORD` environment variables when no admin exists, or (b) by an `ADMIN` through
+  `POST /users`. Admins have no `customerId`.
+- A user's roles MUST change only through `PUT /users/{id}/roles`, called by an `ADMIN`. Role
+  changes are never self-service: no other endpoint, and no `CUSTOMER`, can change a role.
+- A user MUST NOT remove their own `ADMIN` role.
+- The last `ACTIVE` admin MUST never lose the `ADMIN` role and MUST never be disabled. These
+  checks MUST be race-safe (two concurrent requests cannot together remove the last admin).
 
 **Tokens and current state:**
 - Access tokens carry `roles` and, for customers, `customerId`.
@@ -146,8 +229,13 @@ is mandatory.
 | `POST /auth/logout` | public (refresh token required) |
 | `GET /.well-known/jwks.json` | public |
 | `GET /users/me` | `CUSTOMER`, `ADMIN` |
+| `POST /users/me/password` | `CUSTOMER`, `ADMIN` |
 | `GET /users` | `ADMIN` |
+| `POST /users` | `ADMIN` |
+| `GET /users/{id}` | `ADMIN` |
 | `PATCH /users/{id}/status` | `ADMIN` |
+| `PUT /users/{id}/roles` | `ADMIN` |
+| `GET /audit` | `ADMIN` |
 
 **Rules for services that verify tokens (platform-wide):**
 - They MUST verify the signature against the JWKS, and `iss`, `aud` and `exp`.
@@ -166,6 +254,9 @@ The write flow MUST follow this exact sequence and MUST NOT deviate:
 5. **Only after** a successful commit: publish `identity.user-registered`.
 
 Publishing to Kafka before a committed database save is a critical violation. If the DB save fails, no Kafka message MUST be emitted. Services are responsible for enforcing this order. `UserStatus` transitions are only final once persisted.
+
+An administrative mutation (Principle XI) MUST write its audit record in the same transaction as
+the change: if either fails, neither is committed.
 
 Refresh token rotation MUST be atomic: revoking the presented token and storing its replacement
 happen in a single transaction, and two concurrent refreshes with the same token MUST NOT both
@@ -193,7 +284,9 @@ All domain logic and services MUST have unit tests.
 - Service tests MAY use lightweight mocks for repositories and the event publisher.
 - Each of the following security-critical behaviours MUST have its own tests: password hashing,
   access token claims and expiry, refresh token rotation, reuse detection, the generic login
-  error, rate limiting, and role guards.
+  error, rate limiting, role guards, password change (wrong current password, policy, other
+  sessions revoked), the role-change rules (no self-removal of `ADMIN`, last active admin), and
+  audit records (written in the same transaction, never containing secrets).
 - Tests are not optional: a PR that adds a service or domain method without corresponding tests MUST NOT be merged.
 
 ### VII. Testing Strategy
@@ -303,6 +396,27 @@ The project MUST compile and pass all quality checks at all times.
 - Claude Code MUST NOT mark a task as complete until
   all four checks pass.
 
+### XI. Auditability
+
+Every administrative mutation MUST leave a permanent, tamper-evident trace of who changed what.
+
+**What is audited:**
+- Administrative mutations: user creation by an admin (`POST /users`), role change
+  (`PUT /users/{id}/roles`) and status change (`PATCH /users/{id}/status`). The startup seed has
+  no actor and is not audited.
+
+**Audit records:**
+- Each mutation MUST write one audit record with `actorId` (the admin), `action`, `targetId`
+  (the user changed), `before`, `after` and a timestamp.
+- The record MUST be written in the same transaction as the change (Principle IV): a change
+  without its record, or a record without its change, is never committed.
+- Audit records are append-only: they MUST NEVER be updated or deleted, by the API or by the
+  application code.
+- `before` and `after` MUST NEVER contain a password, a password hash or a token.
+
+**Access:**
+- Audit records are readable only by `ADMIN` through `GET /audit`. No other endpoint returns them.
+
 **Tooling:**
 - Linter: ESLint with @typescript-eslint rules
 - Formatter: Prettier
@@ -346,11 +460,11 @@ Introducing a new runtime dependency that duplicates a capability already provid
 The following are out of scope for the whole service unless this constitution is amended:
 
 - Email verification
-- Password reset
+- Password reset (the forgotten-password flow; changing one's own password with the current one
+  is in scope, Principle II)
 - Social login
 - Multi-factor authentication
 - User profile editing
-- Changing roles through the API
 
 A spec that requires any of them MUST NOT be planned until an amendment is merged.
 
@@ -382,4 +496,4 @@ This constitution supersedes all other project conventions and style guides. Whe
 
 **Compliance**: Every PR review MUST verify that no constitutional principle is violated. Reviewers are empowered to block merges for violations without exception. New principles take effect immediately upon merge.
 
-**Version**: 1.0.0 | **Ratified**: 2026-11-17 | **Last Amended**: 2026-11-17
+**Version**: 1.1.0 | **Ratified**: 2026-11-17 | **Last Amended**: 2026-11-19

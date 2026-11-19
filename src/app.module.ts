@@ -22,6 +22,7 @@ import { JwtAuthGuard } from './controllers/auth/jwt-auth.guard';
 import { RolesGuard } from './controllers/auth/roles.guard';
 import { RoutePolicyCheck } from './controllers/auth/route-policy.check';
 import { AuthController, REGISTER_THROTTLER } from './controllers/auth.controller';
+import { AuditController } from './controllers/audit.controller';
 import { HealthController } from './controllers/health.controller';
 import { JwksController } from './controllers/jwks.controller';
 import { UsersController } from './controllers/users.controller';
@@ -171,7 +172,7 @@ function createJwksService(publicKeySet: PublicKeySet, configService: ConfigServ
     CqrsModule,
     DiscoveryModule,
   ],
-  controllers: [HealthController, AuthController, JwksController, UsersController],
+  controllers: [HealthController, AuthController, JwksController, UsersController, AuditController],
   providers: [
     HealthService,
     UserRepository,

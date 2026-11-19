@@ -10,6 +10,7 @@ const MIGRATION = 'CreateUsersAndOutboundDeadLetters20261117130000';
 const LATER_MIGRATIONS = [
   'CreateRefreshTokensAndUserLastLogin20261117140000',
   'AddUserListIndexes20261118120000',
+  'CreateAuditRecords20261119120000',
 ];
 
 /** Inserts a customer row with the given email. */

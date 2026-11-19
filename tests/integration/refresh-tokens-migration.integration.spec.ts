@@ -7,7 +7,7 @@ jest.setTimeout(180_000);
 
 const MIGRATION = 'CreateRefreshTokensAndUserLastLogin20261117140000';
 /** Later migrations, undone first so this one can be reverted. */
-const LATER_MIGRATIONS = ['AddUserListIndexes20261118120000'];
+const LATER_MIGRATIONS = ['AddUserListIndexes20261118120000', 'CreateAuditRecords20261119120000'];
 
 /** Inserts a customer and returns its id. */
 async function insertUser(dataSource: DataSource): Promise<string> {

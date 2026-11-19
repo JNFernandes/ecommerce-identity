@@ -198,6 +198,25 @@ describe('AdminSeedService', () => {
     expect(log).not.toHaveBeenCalled();
   });
 
+  it('should warn, not error, when another instance seeded the admin between the checks', async () => {
+    // Race: no admin at precheck time, but by the email lookup another instance created it.
+    const admin = User.registerAdmin(
+      Email.create('admin@example.com'),
+      UserName.create('Administrator'),
+      HASH,
+    );
+    findByEmail.mockResolvedValue(admin);
+
+    await service.seed();
+
+    expect(warn).toHaveBeenCalledWith(
+      'Administrator already seeded by another instance; admin seed skipped',
+    );
+    expect(error).not.toHaveBeenCalled();
+    expect(hash).not.toHaveBeenCalled();
+    expect(save).not.toHaveBeenCalled();
+  });
+
   it('should not depend on the event publisher', () => {
     const parameters: unknown[] =
       (Reflect.getMetadata('design:paramtypes', AdminSeedService) as unknown[] | undefined) ?? [];

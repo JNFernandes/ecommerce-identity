@@ -21,3 +21,4 @@ requires (Documentation Standards).
 | [0003](0003-admin-seed-and-no-role-change.md) | Admins only from a startup seed; no role-change endpoint | Accepted |
 | [0004](0004-user-registered-event-choreography.md) | Registration publishes `identity.user-registered`; Orders creates the customer | Accepted |
 | [0005](0005-default-deny-route-guards.md) | Default-deny route guards with local access token verification | Accepted |
+| [0006](0006-status-changes-serialized-and-sessions-revoked.md) | Status changes are serialized; disabling revokes sessions; access tokens expire naturally | Accepted |

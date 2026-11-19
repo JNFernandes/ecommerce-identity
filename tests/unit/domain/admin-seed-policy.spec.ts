@@ -46,5 +46,17 @@ describe('AdminSeedPolicy', () => {
         AdminSeedDecision.SKIP_EMAIL_TAKEN,
       );
     });
+
+    it('should treat an admin owning the email as already seeded, not as a taken email', () => {
+      const admin = User.registerAdmin(
+        Email.create('admin@example.com'),
+        UserName.create('Administrator'),
+        'hash',
+      );
+
+      expect(AdminSeedPolicy.decide({ emailOwner: admin })).toBe(
+        AdminSeedDecision.SKIP_ADMIN_EXISTS,
+      );
+    });
   });
 });

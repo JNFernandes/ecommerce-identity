@@ -88,6 +88,10 @@ export class AdminSeedService implements OnApplicationBootstrap {
 
     const emailOwner = await this.userRepository.findByEmail(seed.email.value);
     const decision = AdminSeedPolicy.decide({ emailOwner });
+    if (decision === AdminSeedDecision.SKIP_ADMIN_EXISTS) {
+      this.logger.warn('Administrator already seeded by another instance; admin seed skipped');
+      return;
+    }
     if (decision === AdminSeedDecision.SKIP_EMAIL_TAKEN) {
       this.logger.error('ADMIN_EMAIL belongs to an existing non-admin user; admin seed skipped');
       return;

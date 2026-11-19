@@ -1,3 +1,4 @@
+import { Role } from './role.enum';
 import { User } from './user.aggregate';
 
 /** What the startup admin seed must do. */
@@ -54,12 +55,20 @@ export class AdminSeedPolicy {
   }
 
   /**
-   * Decides, once the values are valid, whether the administrator can be created.
+   * Decides, once the values are valid, whether the administrator can be created. An admin owning
+   * the email means another instance seeded it after `precheck` (concurrent startup), so it counts
+   * as an existing admin, not as a taken email.
    *
    * @param input The current owner of the seed email, if any.
-   * @returns `SKIP_EMAIL_TAKEN` when the email is taken, otherwise `CREATE`.
+   * @returns `SKIP_ADMIN_EXISTS` when the owner is an admin, `SKIP_EMAIL_TAKEN` when another user
+   *   owns the email, otherwise `CREATE`.
    */
   static decide({ emailOwner }: AdminSeedDecideInput): AdminSeedDecision {
-    return emailOwner === null ? AdminSeedDecision.CREATE : AdminSeedDecision.SKIP_EMAIL_TAKEN;
+    if (emailOwner === null) {
+      return AdminSeedDecision.CREATE;
+    }
+    return emailOwner.roles.includes(Role.ADMIN)
+      ? AdminSeedDecision.SKIP_ADMIN_EXISTS
+      : AdminSeedDecision.SKIP_EMAIL_TAKEN;
   }
 }

@@ -94,6 +94,36 @@ describe('Swagger authentication docs (component)', () => {
     );
   });
 
+  it('should document PATCH /users/{id}/status as ADMIN-only with its body and responses', () => {
+    const operation = doc.paths['/users/{id}/status'].patch as Operation & {
+      requestBody?: { content: Record<string, { schema: { $ref?: string } }> };
+      responses: Record<string, { content?: Record<string, { schema: { $ref?: string } }> }>;
+    };
+
+    expect(operation.security).toEqual([{ bearer: [] }]);
+    expect(operation['x-roles']).toEqual(['ADMIN']);
+    expect(Object.keys(operation.responses)).toEqual(
+      expect.arrayContaining(['200', '400', '401', '403', '404', '409']),
+    );
+    expect(operation.responses['200'].content?.['application/json'].schema.$ref).toBe(
+      '#/components/schemas/UserSummaryResponseDto',
+    );
+    expect(operation.requestBody?.content['application/json'].schema.$ref).toBe(
+      '#/components/schemas/ChangeUserStatusDto',
+    );
+    expect(operation.parameters).toContainEqual(
+      expect.objectContaining({
+        name: 'id',
+        in: 'path',
+        schema: expect.objectContaining({ format: 'uuid' }),
+      }),
+    );
+    const body = doc.components.schemas.ChangeUserStatusDto;
+    expect(Object.keys(body.properties)).toEqual(['status']);
+    expect(body.required).toEqual(['status']);
+    expect(body.properties.status).toMatchObject({ enum: ['ACTIVE', 'DISABLED'] });
+  });
+
   it('should document the GET /users query parameters with their enums and bounds', () => {
     const parameters = new Map(
       (doc.paths['/users'].get.parameters ?? []).map((parameter) => [parameter.name, parameter]),

@@ -22,3 +22,4 @@ requires (Documentation Standards).
 | [0004](0004-user-registered-event-choreography.md) | Registration publishes `identity.user-registered`; Orders creates the customer | Accepted |
 | [0005](0005-default-deny-route-guards.md) | Default-deny route guards with local access token verification | Accepted |
 | [0006](0006-status-changes-serialized-and-sessions-revoked.md) | Status changes are serialized; disabling revokes sessions; access tokens expire naturally | Accepted |
+| [0007](0007-outbound-retry-per-row-skip-locked.md) | Outbound retry claims one row per transaction with SKIP LOCKED | Accepted |

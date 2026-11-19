@@ -122,7 +122,7 @@ No setup tasks: no package, configuration or migration changes (plan "Technical 
 
 **Independent Test**: Disable and enable a user and inspect the captured logs.
 
-- [ ] T022 [US6] Component test `tests/component/users-status-logging.component.spec.ts` (`capturing-logger.ts`): disable then enable → exactly two `user status changed` lines with the admin's id as `actorId`, the target id, `from`/`to` in order, and `revokedTokens` matching the revoked rows; across every request in the file (including 400/401/403/409 cases), no captured line contains the customer's or admin's email, a password, an access or refresh token value or `Authorization` (US6-AS1–AS2, FR-011, SC-006). Commit `test(US-07): cover status change logging`.
+- [X] T022 [US6] Component test `tests/component/users-status-logging.component.spec.ts` (`capturing-logger.ts`): disable then enable → exactly two `user status changed` lines with the admin's id as `actorId`, the target id, `from`/`to` in order, and `revokedTokens` matching the revoked rows; across every request in the file (including 400/401/403/409 cases), no captured line contains the customer's or admin's email, a password, an access or refresh token value or `Authorization` (US6-AS1–AS2, FR-011, SC-006). Commit `test(US-07): cover status change logging`.
 
 ---
 

@@ -14,6 +14,7 @@ import { UserRepository } from '../../../src/repositories/user.repository';
 import { PasswordHasher } from '../../../src/services/ports/password-hasher';
 import { UserEventPublisher } from '../../../src/services/ports/user-event-publisher';
 import { RegisterCustomerService } from '../../../src/services/register-customer.service';
+import { UserEventDispatcher } from '../../../src/services/user-event-dispatcher';
 
 const HASH = '$argon2id$v=19$m=1024,t=2,p=1$salt$digest';
 const PASSWORD = 'correct-horse-battery';
@@ -40,8 +41,11 @@ describe('RegisterCustomerService', () => {
     service = new RegisterCustomerService(
       { hash, verify: jest.fn(), dummyHash: jest.fn() } as PasswordHasher,
       { save } as unknown as UserRepository,
-      { publishUserRegistered, republish: jest.fn() } as UserEventPublisher,
-      { recordFailure } as unknown as OutboundDeadLetterRepository,
+      // A real dispatcher over mocked ports: registration keeps its end-to-end publish coverage.
+      new UserEventDispatcher(
+        { publishUserRegistered, republish: jest.fn() } as UserEventPublisher,
+        { recordFailure } as unknown as OutboundDeadLetterRepository,
+      ),
     );
   });
 

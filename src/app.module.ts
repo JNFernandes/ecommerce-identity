@@ -54,6 +54,7 @@ import { DEFAULT_JWKS_CACHE_SECONDS, JwksService } from './services/jwks.service
 import { AdminSeedService } from './services/admin-seed.service';
 import { ChangeUserStatusService } from './services/change-user-status.service';
 import { RetryOutboundEventsService } from './services/retry-outbound-events.service';
+import { UserEventDispatcher } from './services/user-event-dispatcher';
 import { DeadLetterRetryWorker } from './infra/outbound/dead-letter-retry.worker';
 import { GetUserService } from './services/get-user.service';
 import { ListUsersService } from './services/list-users.service';
@@ -205,6 +206,7 @@ function createJwksService(publicKeySet: PublicKeySet, configService: ConfigServ
     { provide: APP_FILTER, useClass: AccessTokenExceptionFilter },
     RoutePolicyCheck,
     { provide: UserEventPublisher, useClass: UserEventsProducer },
+    UserEventDispatcher,
     RegisterCustomerService,
     LoginService,
     RefreshService,

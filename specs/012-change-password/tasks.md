@@ -65,7 +65,7 @@ access token still works.
 **Independent test**: wrong current password → 401 and nothing changed; 6th attempt → 429; other
 user unaffected; bad bodies/policy → 400; no token or disabled user → 401.
 
-- [ ] T006 [P] [US3] Component tests `tests/component/change-password-rate-limit.component.spec.ts`
+- [X] T006 [P] [US3] Component tests `tests/component/change-password-rate-limit.component.spec.ts`
   (US3: wrong current → generic 401, password and sessions unchanged; 6th attempt → 429; different
   user same IP not blocked) and `tests/component/change-password-validation.component.spec.ts`
   (US4: <10, >128, equals email ignoring case, equals current → 400; missing/non-string/extra field →

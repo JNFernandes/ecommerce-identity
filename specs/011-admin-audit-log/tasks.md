@@ -26,7 +26,7 @@ None (no new dependency or config).
 
 **Independent test**: seeded admin creates a user and changes their roles; `GET /audit` shows both, newest first, with page metadata.
 
-- [ ] T007 [P] [US1] Component test `tests/component/audit-list.component.spec.ts`: defaults (`limit` 20, `offset` 0, `total`), newest-first order, exact item keys (no password/hash/token/email), paging through all pages returns each record once, offset past end → empty `items` + real `total`, no records → `total` 0. Commit `test(US-11): add component tests for audit listing`.
+- [X] T007 [P] [US1] Component test `tests/component/audit-list.component.spec.ts`: defaults (`limit` 20, `offset` 0, `total`), newest-first order, exact item keys (no password/hash/token/email), paging through all pages returns each record once, offset past end → empty `items` + real `total`, no records → `total` 0. Commit `test(US-11): add component tests for audit listing`.
 
 ## Phase 4: User Story 2 - Filter the trail (P1)
 

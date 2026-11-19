@@ -197,6 +197,83 @@ describe('OutboundDeadLetterRepository.processNextDue (integration)', () => {
     expect(after.retryCount).toBe(10);
   });
 
+  describe('concurrent claimers', () => {
+    /** A promise plus the function that resolves it. */
+    function gate(): { opened: Promise<void>; open: () => void } {
+      let open: () => void = () => undefined;
+      const opened = new Promise<void>((resolve) => {
+        open = resolve;
+      });
+      return { opened, open };
+    }
+
+    it('should never hand the same row to two concurrent claimers', async () => {
+      await entities.save(
+        Array.from({ length: 10 }, (_, i) =>
+          rowOf({ nextRetryAt: new Date(NOW.getTime() - 1000 * (i + 1)) }),
+        ),
+      );
+      const claimed: string[] = [];
+
+      /** Claims until nothing is due, holding each lock briefly. */
+      async function drain(): Promise<void> {
+        for (;;) {
+          const result = await repository.processNextDue(TOPIC, NOW, async (row) => {
+            claimed.push(row.id);
+            await new Promise((resolve) => setTimeout(resolve, 20));
+            return resolved(row);
+          });
+          if (result === null) {
+            return;
+          }
+        }
+      }
+
+      await Promise.all([drain(), drain()]);
+
+      expect(new Set(claimed).size).toBe(claimed.length);
+      expect(claimed).toHaveLength(10);
+    });
+
+    it('should skip a locked row instead of waiting for it', async () => {
+      const first = rowOf({ nextRetryAt: new Date(NOW.getTime() - 2000) });
+      const second = rowOf({ nextRetryAt: new Date(NOW.getTime() - 1000) });
+      await entities.save([first, second]);
+      const entered = gate();
+      const release = gate();
+
+      const holding = repository.processNextDue(TOPIC, NOW, async (row) => {
+        entered.open();
+        await release.opened;
+        return resolved(row);
+      });
+      await entered.opened;
+      const other = await repository.processNextDue(TOPIC, NOW, async (row) => resolved(row));
+      const none = await repository.processNextDue(TOPIC, NOW, async (row) => resolved(row));
+      release.open();
+      const held = await holding;
+
+      expect(held?.row.id).toBe(first.id);
+      expect(other?.row.id).toBe(second.id);
+      expect(none).toBeNull();
+    });
+
+    it('should release a row whose processing crashed so a later claim gets it', async () => {
+      const stored = rowOf();
+      await entities.save(stored);
+
+      await expect(
+        repository.processNextDue(TOPIC, NOW, async () => {
+          throw new Error('instance crashed');
+        }),
+      ).rejects.toThrow('instance crashed');
+      const retried = await repository.processNextDue(TOPIC, NOW, async (row) => resolved(row));
+
+      expect(retried?.row.id).toBe(stored.id);
+      expect(retried?.row.retryCount).toBe(0);
+    });
+  });
+
   it('should roll back and leave the row exactly as before when the handler throws', async () => {
     const stored = rowOf({ retryCount: 3 });
     await entities.save(stored);

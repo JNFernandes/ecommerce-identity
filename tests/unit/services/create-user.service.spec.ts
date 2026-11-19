@@ -57,6 +57,10 @@ class FakeTx implements AdminTx {
     return Promise.reject(new Error('not used'));
   }
 
+  saveRoles(): Promise<void> {
+    return Promise.reject(new Error('not used'));
+  }
+
   revokeAllRefreshTokens(): Promise<number> {
     return Promise.reject(new Error('not used'));
   }

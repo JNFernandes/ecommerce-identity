@@ -202,8 +202,24 @@ from roles only, never secrets). Stored in `audit_records`, append-only: a trigg
   `WHERE status = 'ACTIVE'`; with 0 rows it throws `InvalidCredentialsError` and stores no token,
   so a disable that commits between the password check and the save wins.
 
+**Added by US-10 (role changes):**
+
+- `PUT /users/{id}/roles` — `UsersController.changeRoles` (`ParseUUIDPipe`, `ChangeUserRolesDto`)
+  → `CommandBus` → `ChangeUserRolesService`. `@Roles(ADMIN)`. `UserValidationError` → `400`,
+  `UserNotFoundError` → `404`, `CannotRemoveOwnAdminError` / `LastActiveAdminError` → `409`.
+- Domain: `User.previewRoleChange` (validation, no-op, self rule) and `changeRoles` (first
+  `CUSTOMER` grant creates a `customerId` and records `UserRegistered`); `activeCustomerId`;
+  `LastActiveAdminPolicy.assertCanRemoveAdmin`; `AuditRecord.rolesChanged` (`ROLES_CHANGED`).
+- **Role change flow** (same lock order as status changes): advisory lock → actor re-read → target
+  `FOR UPDATE` → `previewRoleChange` → if `ADMIN` removed, `countActiveAdmins` + policy →
+  `changeRoles` → `AdminTx.saveRoles` (`roles`, `customerId`, `updatedAt`) → if a role was removed,
+  `revokeAllRefreshTokens` → `appendAudit`. After the commit: log line, then
+  `UserEventDispatcher.dispatch` (dead-letter fallback).
+- `JoseTokenIssuer` puts `customerId` in a token only when the roles include `CUSTOMER`.
+
 **Domain events produced:** `identity.user-registered` (`UserRegistered`, after the user is
-committed; contract in `ecommerce-infra/docs/events.md`). Customers only: the admin seed publishes
+committed; contract in `ecommerce-infra/docs/events.md`). Only for a new customer identity
+(registration, `POST /users` with `CUSTOMER`, first `CUSTOMER` grant): the admin seed publishes
 nothing.
 
 **Shared setup:** `app.setup.ts` (CORS from `CORS_ALLOWED_ORIGINS`, global `ValidationPipe` with

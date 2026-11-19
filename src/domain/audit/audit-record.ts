@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { Role } from '../role.enum';
 import { User } from '../user.aggregate';
 import { UserStatus } from '../user-status.enum';
 import { AuditAction } from './audit-action.enum';
@@ -66,6 +67,27 @@ export class AuditRecord {
       targetId: user.id,
       before: { status: from },
       after: { status: user.status },
+      occurredAt: at,
+    });
+  }
+
+  /**
+   * The record of an admin changing a user's roles: `before` and `after` hold only the roles.
+   * Written only when the roles actually changed (a no-op writes nothing).
+   *
+   * @param actorId The acting admin's id.
+   * @param user The user after the change.
+   * @param before The roles before the change.
+   * @param at Time of the change.
+   */
+  static rolesChanged(actorId: string, user: User, before: readonly Role[], at: Date): AuditRecord {
+    return new AuditRecord({
+      id: randomUUID(),
+      actorId,
+      action: AuditAction.ROLES_CHANGED,
+      targetId: user.id,
+      before: { roles: [...before] },
+      after: { roles: [...user.roles] },
       occurredAt: at,
     });
   }

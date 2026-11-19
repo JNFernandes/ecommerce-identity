@@ -55,3 +55,32 @@ describe('LastActiveAdminPolicy', () => {
     ).not.toThrow();
   });
 });
+
+describe('LastActiveAdminPolicy.assertCanRemoveAdmin', () => {
+  it.each([1, 0])('should refuse an ACTIVE admin when the count is %i', (activeAdminCount) => {
+    expect(() =>
+      LastActiveAdminPolicy.assertCanRemoveAdmin({
+        target: user(Role.ADMIN, UserStatus.ACTIVE),
+        activeAdminCount,
+      }),
+    ).toThrow(new LastActiveAdminError('the last active admin cannot lose the ADMIN role'));
+  });
+
+  it('should allow an ACTIVE admin when another ACTIVE admin exists', () => {
+    expect(() =>
+      LastActiveAdminPolicy.assertCanRemoveAdmin({
+        target: user(Role.ADMIN, UserStatus.ACTIVE),
+        activeAdminCount: 2,
+      }),
+    ).not.toThrow();
+  });
+
+  it('should allow a DISABLED admin whatever the count', () => {
+    expect(() =>
+      LastActiveAdminPolicy.assertCanRemoveAdmin({
+        target: user(Role.ADMIN, UserStatus.DISABLED),
+        activeAdminCount: 1,
+      }),
+    ).not.toThrow();
+  });
+});

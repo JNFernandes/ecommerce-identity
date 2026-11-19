@@ -25,8 +25,8 @@ are in `ecommerce-infra/docs/events.md`, which is the source of truth.
 | `CUSTOMER` | Public registration (`POST /auth/register`), or an `ADMIN` through `POST /users` | New, generated at creation |
 | `ADMIN` | The startup seed from `ADMIN_EMAIL` / `ADMIN_PASSWORD` when no admin exists ([Admin seed](#admin-seed)), or an `ADMIN` through `POST /users` | None |
 
-A user holds exactly one role. Roles change only through `PUT /users/{id}/roles`, called by an `ADMIN` (planned); never
-self-service. A user cannot remove their own `ADMIN` role, and the last `ACTIVE` admin can never
+Users are created with one role and may later hold both. Roles change only through
+`PUT /users/{id}/roles`, called by an `ADMIN`; never self-service. A user cannot remove their own `ADMIN` role, and the last `ACTIVE` admin can never
 lose `ADMIN` or be disabled. Every user creation by an admin, role change and status change is
 recorded in an append-only audit trail readable by admins through `GET /audit` (planned)
 ([ADR 0008](docs/adr/0008-admin-creation-and-role-changes-through-the-api.md), which supersedes
@@ -53,12 +53,12 @@ recorded in an append-only audit trail readable by admins through `GET /audit` (
 | `PATCH /users/{id}/status` | `ADMIN` | implemented |
 | `POST /users/me/password` | `CUSTOMER`, `ADMIN` | planned |
 | `POST /users` | `ADMIN` | implemented |
-| `PUT /users/{id}/roles` | `ADMIN` | planned |
+| `PUT /users/{id}/roles` | `ADMIN` | implemented |
 | `GET /audit` | `ADMIN` | planned |
 
 `GET /users/me` returns the caller's account as stored now:
 `{ "id", "customerId", "email", "name", "roles", "status", "createdAt" }`. `customerId` is left out
-entirely for admins; no password, hash or token is ever returned. A user deleted or disabled after
+entirely for a user who never held `CUSTOMER`; no password, hash or token is ever returned. A user deleted or disabled after
 login gets the same `401` as an invalid token. It reads PostgreSQL only and works with Kafka down.
 
 `GET /users` lists users for admins, newest first (`createdAt` descending, then `id`), as
@@ -73,7 +73,7 @@ login gets the same `401` as an invalid token. It reads PostgreSQL only and work
 | `email` | none | Case-insensitive email prefix, matched literally (`%` and `_` are not wildcards), at most 254 characters; empty is ignored |
 
 Each item is `{ "id", "customerId", "email", "name", "roles", "status", "createdAt", "lastLoginAt" }`:
-`customerId` is left out for admins and `lastLoginAt` is `null` until the first login. No password
+`customerId` is left out for a user who never held `CUSTOMER` and `lastLoginAt` is `null` until the first login. No password
 or hash is ever returned. `total` counts every matching user; an offset past the end returns no
 items with the real total. An invalid or unknown parameter gets `400` with the validation messages.
 
@@ -104,6 +104,31 @@ with the user after the request, in the `GET /users/{id}` shape.
   `USER_STATUS_CHANGED` audit record (actor, target, `before`/`after` status) in the same
   transaction; a no-op writes neither. No role is ever changed, no event is published, and the
   endpoint works with Kafka down.
+
+### `PUT /users/{id}/roles`
+
+Admins only. Body `{ "roles": [...] }`: a non-empty list of distinct values from `CUSTOMER` and
+`ADMIN`, any order, no other field. The list **replaces** the user's roles. Answers `200` with the
+user after the request, in the `GET /users/{id}` shape.
+
+- Removing any role revokes **every** refresh token of the user in the same transaction; a
+  grant-only change revokes none.
+- The first `CUSTOMER` grant to a user without `customerId` creates one and publishes
+  `identity.user-registered` after the commit (dead-lettered and retried if Kafka is down; still
+  `200`). Removing `CUSTOMER` keeps the `customerId` (shown to admins, never put in a token); a
+  later grant reuses it without a new event. `ADMIN` never touches it.
+- Sending the current roles is a no-op: `200`, nothing written, revoked, published or logged.
+- Safeguards (`409`): an admin cannot remove their own `ADMIN` role
+  (`an admin cannot remove their own ADMIN role`), and the last `ACTIVE` admin cannot lose it
+  (`the last active admin cannot lose the ADMIN role`). Role and status changes share one lock, so
+  concurrent demotions and disables always leave an `ACTIVE` admin; an admin demoted or disabled
+  since their token was issued gets the generic `401`.
+- `400` for a malformed id or an invalid body; `404` (`user not found`) for an unknown id; `401` /
+  `403` as for every protected route.
+- Every effective change logs `user roles changed: actorId=… targetId=… before=… after=…
+  revokedTokens=N` (ids and roles only) and writes a `ROLES_CHANGED` audit record (actor, target,
+  `before`/`after` roles) in the same transaction
+  ([ADR 0010](docs/adr/0010-role-changes-keep-customer-id-and-share-the-admin-lock.md)).
 
 `GET /health` returns `200` with `{ "status": "ok", "database": "up", "kafka": "idle" }` when
 PostgreSQL answers, and `503` when it does not. The `kafka` field (`idle`, `connected`,
@@ -215,6 +240,9 @@ down (never `204`).
   `JWT_ACCESS_TTL_SECONDS`. `GET /users/me`, login, refresh and `PATCH /users/{id}/status` read the
   current status and refuse the user at once; every refresh token is already revoked
   ([ADR 0006](docs/adr/0006-status-changes-serialized-and-sessions-revoked.md)).
+- **Role changes reach access tokens only at refresh or login.** A token issued before a role
+  change keeps its old roles until `exp`, at most `JWT_ACCESS_TTL_SECONDS`. Removing a role
+  revokes every refresh token, so the user must log in again to get the reduced roles.
 - **Reuse detection is strict, with no grace window.** A client that retries a refresh after
   losing the first response presents a used token, so the session is revoked and the user must log
   in again. Clients must not retry a refresh blindly.

@@ -25,3 +25,4 @@ requires (Documentation Standards).
 | [0007](0007-outbound-retry-per-row-skip-locked.md) | Outbound retry claims one row per transaction with SKIP LOCKED | Accepted |
 | [0008](0008-admin-creation-and-role-changes-through-the-api.md) | Admins create users and change roles through the API, with audit | Accepted |
 | [0009](0009-append-only-audit-table.md) | Audit records in an append-only table guarded by a trigger | Accepted |
+| [0010](0010-role-changes-keep-customer-id-and-share-the-admin-lock.md) | Role changes keep the `customerId` and share the admin-changes lock | Accepted |

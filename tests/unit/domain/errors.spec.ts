@@ -1,4 +1,5 @@
 import { CannotDisableSelfError } from '../../../src/domain/errors/cannot-disable-self.error';
+import { CannotRemoveOwnAdminError } from '../../../src/domain/errors/cannot-remove-own-admin.error';
 import { DuplicateEmailError } from '../../../src/domain/errors/duplicate-email.error';
 import {
   AccessTokenFailureReason,
@@ -98,6 +99,19 @@ describe('domain errors', () => {
     expect(error).toBeInstanceOf(Error);
     expect(error.name).toBe('LastActiveAdminError');
     expect(error.message).toBe('the last active admin cannot be disabled');
+  });
+
+  it('should carry the given message in a LastActiveAdminError', () => {
+    expect(new LastActiveAdminError('custom').message).toBe('custom');
+  });
+
+  it('should use the fixed message in a CannotRemoveOwnAdminError', () => {
+    const error = new CannotRemoveOwnAdminError();
+
+    expect(error).toBeInstanceOf(CannotRemoveOwnAdminError);
+    expect(error).toBeInstanceOf(Error);
+    expect(error.name).toBe('CannotRemoveOwnAdminError');
+    expect(error.message).toBe('an admin cannot remove their own ADMIN role');
   });
 });
 

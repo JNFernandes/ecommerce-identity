@@ -94,3 +94,29 @@ describe('AuditRecord.statusChanged', () => {
     expect(Object.keys(record.after)).toEqual(['status']);
   });
 });
+
+describe('AuditRecord.rolesChanged', () => {
+  it('should record who changed whose roles, from what to what, with the roles only', () => {
+    const user = customer();
+    user.changeRoles([Role.CUSTOMER, Role.ADMIN], ACTOR, AT);
+
+    const record = AuditRecord.rolesChanged(ACTOR, user, [Role.CUSTOMER], AT);
+
+    expect(record.actorId).toBe(ACTOR);
+    expect(record.action).toBe(AuditAction.ROLES_CHANGED);
+    expect(record.targetId).toBe(user.id);
+    expect(record.before).toEqual({ roles: [Role.CUSTOMER] });
+    expect(record.after).toEqual({ roles: [Role.CUSTOMER, Role.ADMIN] });
+    expect(record.occurredAt).toBe(AT);
+    expect(Object.keys(record.before ?? {})).toEqual(['roles']);
+    expect(Object.keys(record.after)).toEqual(['roles']);
+  });
+
+  it('should keep its own copy of the roles before', () => {
+    const before = [Role.ADMIN];
+    const record = AuditRecord.rolesChanged(ACTOR, admin(), before, AT);
+    before.push(Role.CUSTOMER);
+
+    expect(record.before).toEqual({ roles: [Role.ADMIN] });
+  });
+});

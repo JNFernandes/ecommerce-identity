@@ -8,12 +8,12 @@ The rules for this repository are in the constitution,
 [`.specify/memory/constitution.md`](.specify/memory/constitution.md). The shared event contracts
 are in `ecommerce-infra/docs/events.md`, which is the source of truth.
 
-> **Status: in progress.** US-01 to US-12 are implemented: customer registration, login, the JWKS
+> **Status: complete.** US-01 to US-12 are implemented: customer registration, login, the JWKS
 > endpoint with key rotation, refresh and logout, `GET /users/me` with default-deny role guards, the
-> startup admin seed, the admin `GET /users` and `GET /users/{id}`, and enabling or disabling users
-> with `PATCH /users/{id}/status`, the outbound retry worker (US-08) and admin user creation with
-> `POST /users` (US-09), role changes with `PUT /users/{id}/roles` (US-10) and the audit trail
-> `GET /audit` (US-11), and changing one's own password with `POST /users/me/password` (US-12).
+> startup admin seed, the admin `GET /users` and `GET /users/{id}`, enabling or disabling users
+> with `PATCH /users/{id}/status`, the outbound retry worker (US-08), admin user creation with
+> `POST /users` (US-09), role changes with `PUT /users/{id}/roles` (US-10), the audit trail
+> `GET /audit` (US-11) and changing one's own password with `POST /users/me/password` (US-12).
 
 > **HTTPS is required outside local development.** This service receives passwords and issues
 > tokens; never expose it over plain HTTP except on `localhost`.
@@ -38,23 +38,28 @@ recorded in an append-only audit trail readable by admins through [`GET /audit`]
 
 ## Endpoints
 
-| Endpoint | Access | Status |
-|---|---|---|
-| `GET /health` | public | implemented |
-| `GET /docs` (Swagger UI), `GET /docs-json` (OpenAPI) | public | implemented |
-| `POST /auth/register` | public, rate limited per IP | implemented |
-| `POST /auth/login` | public, rate limited per IP and per email | implemented |
-| `POST /auth/refresh` | public (refresh token), rate limited per IP | implemented |
-| `POST /auth/logout` | public (refresh token), rate limited per IP | implemented |
-| `GET` / `HEAD /.well-known/jwks.json` | public, not rate limited | implemented |
-| `GET /users/me` | `CUSTOMER`, `ADMIN` | implemented |
-| `GET /users` | `ADMIN` | implemented |
-| `GET /users/{id}` | `ADMIN` | implemented |
-| `PATCH /users/{id}/status` | `ADMIN` | implemented |
-| `POST /users/me/password` | `CUSTOMER`, `ADMIN` | implemented |
-| `POST /users` | `ADMIN` | implemented |
-| `PUT /users/{id}/roles` | `ADMIN` | implemented |
-| `GET /audit` | `ADMIN` | implemented |
+| Method | Path | Allowed roles | Rate limit (defaults) |
+|---|---|---|---|
+| `GET` | `/health` | public | none |
+| `GET` | `/docs` (Swagger UI), `/docs-json` (OpenAPI) | public | none |
+| `GET`, `HEAD` | `/.well-known/jwks.json` | public | none |
+| `POST` | `/auth/register` | public | 5 per minute per client IP (`RATE_LIMIT_REGISTER_*`) |
+| `POST` | `/auth/login` | public | 10 per minute per client IP **and** per normalized email (`RATE_LIMIT_LOGIN_*`) |
+| `POST` | `/auth/refresh` | public (refresh token in the body) | 30 per minute per client IP (`RATE_LIMIT_REFRESH_*`) |
+| `POST` | `/auth/logout` | public (refresh token in the body) | 30 per minute per client IP (`RATE_LIMIT_LOGOUT_*`) |
+| `GET` | `/users/me` | `CUSTOMER`, `ADMIN` | none |
+| `POST` | `/users/me/password` | `CUSTOMER`, `ADMIN` | 5 per minute per user id and client IP (`RATE_LIMIT_PASSWORD_CHANGE_*`) |
+| `GET` | `/users` | `ADMIN` | none |
+| `GET` | `/users/{id}` | `ADMIN` | none |
+| `POST` | `/users` | `ADMIN` | none |
+| `PATCH` | `/users/{id}/status` | `ADMIN` | none |
+| `PUT` | `/users/{id}/roles` | `ADMIN` | none |
+| `GET` | `/audit` | `ADMIN` | none |
+
+Past its limit a rate-limited route answers `429`; every request counts, including rejected ones.
+Protected routes answer `401` without a valid token and `403` without one of the listed roles. In
+Swagger, each operation states its access at the top of its description (`x-public` or `x-roles`)
+and lists its error responses.
 
 `GET /users/me` returns the caller's account as stored now:
 `{ "id", "customerId", "email", "name", "roles", "status", "createdAt" }`. `customerId` is left out
@@ -376,6 +381,51 @@ The failure reason is logged at `warn`; tokens and `Authorization` values never 
 are not revoked by logout: they stay valid until they expire (15 minutes by default). See
 [ADR 0005](docs/adr/0005-default-deny-route-guards.md).
 
+## Security notes
+
+- **Passwords: argon2id.** Passwords are hashed with argon2id (`ARGON2_*`: 64 MiB, 3 iterations
+  and parallelism 4 by default). A password is never logged, returned, audited or stored in clear.
+  The same policy (10–128 characters, not the email) applies to registration, the admin seed,
+  `POST /users` and password changes.
+- **Tokens: RS256 and JWKS.** Access tokens are RS256 JWTs (15 minutes by default) with a `kid`
+  header. Downstream services verify them locally against `GET /.well-known/jwks.json`, which can
+  publish several keys during a rotation. Only RS256 is accepted: `none` and `HS*` are rejected.
+  Private keys are never committed ([ADR 0001](docs/adr/0001-rs256-access-tokens-with-jwks.md)).
+- **Refresh rotation and reuse detection.** Refresh tokens are opaque (256 random bits), stored
+  only as SHA-256 hashes, single use and rotated on every refresh. Presenting a used or revoked
+  token revokes its whole family. Sessions also end after `JWT_SESSION_MAX_SECONDS`
+  ([ADR 0002](docs/adr/0002-refresh-token-rotation-with-reuse-detection.md)).
+- **Generic login errors.** Every login failure answers the same `401 invalid credentials` after
+  exactly one argon2id verification (against a dummy hash for an unknown email), so neither the
+  body nor the timing reveals whether an account exists. Refresh and the protected routes each have
+  a single generic `401`. Register and login are rate limited.
+- **Default deny.** Every route needs exactly one of `@Public()` or a non-empty `@Roles(...)`;
+  otherwise the service refuses to start. Roles come only from the verified token, and admin
+  mutations re-read the acting admin in the same transaction
+  ([ADR 0005](docs/adr/0005-default-deny-route-guards.md)). CORS allows only
+  `CORS_ALLOWED_ORIGINS`.
+- **Audit log.** User creation by an admin, role changes and status changes each write an audit
+  record in the same transaction as the change. A database trigger rejects every `UPDATE` and
+  `DELETE`. Records never hold passwords, hashes, tokens or emails, and only admins read them,
+  through `GET /audit` ([ADR 0009](docs/adr/0009-append-only-audit-table.md)).
+- **Logs.** Passwords, hashes, tokens and `Authorization` headers are never logged; logs carry ids.
+
+Documented trade-offs (details in [Session trade-offs](#session-trade-offs)):
+
+- **Access tokens stay valid until they expire.** Logout, reuse revocation, disabling a user, a
+  password change and a role removal revoke refresh tokens at once. An access token already issued
+  stays valid until its `exp` (at most `JWT_ACCESS_TTL_SECONDS`, 15 minutes by default) on
+  token-only routes and in downstream services
+  ([ADR 0006](docs/adr/0006-status-changes-serialized-and-sessions-revoked.md)).
+- **Admin-chosen initial passwords.** `POST /users` sets the password the admin supplies, so the
+  admin knows it until the user changes it with `POST /users/me/password`
+  ([ADR 0008](docs/adr/0008-admin-creation-and-role-changes-through-the-api.md)).
+- **Strict reuse detection.** There is no grace window. A client that retries a refresh after
+  losing the response presents a used token and loses the session, so clients must not retry a
+  refresh blindly.
+- **Registration reveals existing emails.** `POST /auth/register` answers `409` for an email that
+  is already used; the per-IP rate limit bounds probing.
+
 ## Events
 
 | Topic | Published when | Payload (besides the envelope) |
@@ -466,14 +516,32 @@ The RS256 private key is read from `JWT_PRIVATE_KEY_PATH` and is **never committ
   stops startup with an error naming the file(s).
 - The `kid` is derived from the key, so it stays the same across restarts.
 
-### Rotating the signing key
+### Key rotation runbook
 
-1. `npm run keys:generate -- --name next` creates the new pair.
-2. Point `JWT_PRIVATE_KEY_PATH` at `keys/next-private.pem`.
-3. Add the previous public key (e.g. `keys/public.pem`) to `JWT_RETIRED_PUBLIC_KEY_PATHS`.
-4. Restart. New tokens carry the new `kid`; tokens signed by the previous key still verify.
-5. After the access token lifetime (`JWT_ACCESS_TTL_SECONDS`) plus the JWKS cache time
-   (`JWKS_CACHE_SECONDS`), remove the previous key from `JWT_RETIRED_PUBLIC_KEY_PATHS` and restart.
+A planned rotation, with no downtime and no forced logout. Below, `current` is the pair in use
+(`keys/private.pem`, `keys/public.pem`) and `next` is the new one.
+
+1. **Generate.** `npm run keys:generate -- --name next` writes `keys/next-private.pem` and
+   `keys/next-public.pem` and prints the new `kid`. Deliver the private key to every instance
+   through your secret store; never commit it.
+2. **Pre-publish (only with several instances).** Add `./keys/next-public.pem` to
+   `JWT_RETIRED_PUBLIC_KEY_PATHS` and restart every instance. The JWKS now lists the new `kid`,
+   which does not sign yet. Wait `JWKS_CACHE_SECONDS` so verifiers' caches pick it up. A single
+   instance can skip this step: verifiers refetch on an unknown `kid`.
+3. **Switch.** Set `JWT_PRIVATE_KEY_PATH=./keys/next-private.pem` and set
+   `JWT_RETIRED_PUBLIC_KEY_PATHS=./keys/public.pem` (the previous public key only: the new public
+   key must leave that list, since a duplicate `kid` stops startup). Restart every instance.
+4. **Verify.** `curl -s http://localhost:3001/.well-known/jwks.json` lists the new `kid` first and
+   the previous one second. A fresh login returns a token whose header `kid` is the new one, and a
+   token issued before the switch still works on `GET /users/me`.
+5. **Retire.** After `JWT_ACCESS_TTL_SECONDS` plus `JWKS_CACHE_SECONDS` (20 minutes with the
+   defaults), every token signed by the previous key has expired. Empty
+   `JWT_RETIRED_PUBLIC_KEY_PATHS`, restart, and destroy the previous private key.
+
+**Compromised key.** Don't wait: switch to a new key without listing the compromised public key as
+retired, then restart. Every access token it signed is rejected at once. Clients get `401` and call
+`POST /auth/refresh` (refresh tokens are opaque and not signed by this key), so sessions survive.
+Downstream verifiers drop the old key when their JWKS cache expires.
 
 ## Environment variables
 

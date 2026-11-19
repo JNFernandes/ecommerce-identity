@@ -11,11 +11,33 @@ describe('UserEventsProducer', () => {
     occurredAt: new Date('2026-11-17T12:00:00.000Z'),
   });
   let publish: jest.Mock<Promise<void>, Parameters<LazyKafkaProducer['publish']>>;
+  let publishRaw: jest.Mock<Promise<void>, Parameters<LazyKafkaProducer['publishRaw']>>;
   let producer: UserEventsProducer;
 
   beforeEach(() => {
     publish = jest.fn().mockResolvedValue(undefined);
-    producer = new UserEventsProducer({ publish } as unknown as LazyKafkaProducer);
+    publishRaw = jest.fn().mockResolvedValue(undefined);
+    producer = new UserEventsProducer({ publish, publishRaw } as unknown as LazyKafkaProducer);
+  });
+
+  describe('republish', () => {
+    const payload = { eventId: 'e-1', aggregateId: 'u-1', email: 'ana@example.com' };
+
+    it('should delegate the stored topic, key and payload unchanged', async () => {
+      await producer.republish('identity.user-registered', 'stored-key', payload);
+
+      expect(publishRaw).toHaveBeenCalledWith('identity.user-registered', 'stored-key', payload);
+      expect(publish).not.toHaveBeenCalled();
+    });
+
+    it('should propagate a publish failure', async () => {
+      const failure = new Error('broker down');
+      publishRaw.mockRejectedValue(failure);
+
+      await expect(producer.republish('identity.user-registered', 'k', payload)).rejects.toBe(
+        failure,
+      );
+    });
   });
 
   it('should publish on identity.user-registered with exactly the seven contract fields', async () => {
